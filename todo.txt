@@ -1,0 +1,6 @@
+d3d12 debug output
+precompiled shaders
+
+fullscreen support
+
+control cursor icon
