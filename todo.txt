@@ -1,6 +1,10 @@
-d3d12 debug output
-precompiled shaders
+raytracing geometry build procedures
 
+d3d12 debug output
+shader compiler output
+consistent error/debug logging
+
+precompiled shaders
 fullscreen support
 
 control cursor icon

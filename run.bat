@@ -1,12 +1,12 @@
 @echo off
 setlocal
 
-call ./build %*
+call ./build
 if %ERRORLEVEL% neq 0 (
     exit /b %ERRORLEVEL%
 )
 
 echo.
-.\out\raytracer
+.\out\raytracer %*
 
 endlocal

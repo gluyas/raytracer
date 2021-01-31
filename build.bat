@@ -1,15 +1,23 @@
 @echo off
 
+dxc ^
+    -T lib_6_3 ^
+    -Fh out/raytracing.hlsl.h /Vn raytracing_hlsl_bytecode ^
+    ^
+    src/raytracing.hlsl
+
+if %ERRORLEVEL% neq 0 (
+    exit /b %ERRORLEVEL%
+)
+
 cl ^
-    /Foout\ /Fdout\ /Feout\raytracer ^
+    -Zi -EHsc ^
+    -Foout\ -Fdout\ -Feout\raytracer ^
     ^
-    /EHsc ^
-    ^
-    /Ilib /Ilib\imgui /Ilib\DirectXMath ^
-    /DUNICODE ^
+    -Ilib -Ilib\imgui -Ilib\DirectXMath -I. ^
+    -DUNICODE -DDEBUG ^
     src\main.cpp ^
     ^
     out\lib.lib ^
     user32.lib ^
-    d3d12.lib dxgi.lib d3dcompiler.lib ^
-    %*
+    d3d12.lib dxgi.lib d3dcompiler.lib
