@@ -1,18 +1,17 @@
-// TODO: single definition of common structures
-struct Vertex {
-    float3 position;
-    float3 color;
-};
+#include "types.h"
 
 // SHADER RESOURCES
 
 GlobalRootSignature global_root_signature = {
     "DescriptorTable(UAV(u0))," // 0: { g_render_target }
-    "SRV(t0)," // 1: g_scene
-    "DescriptorTable(SRV(t1, numDescriptors = 2))," // 2: { g_vertices, g_indices }
+    "CBV(b0)," // 1: g
+    "SRV(t0)," // 2: g_scene
+    "DescriptorTable(SRV(t1, numDescriptors = 2))," // 3: { g_vertices, g_indices }
 };
 
 RWTexture2D<float4> g_render_target : register(u0);
+
+ConstantBuffer<RaytracingGlobals> g : register(b0);
 
 RaytracingAccelerationStructure g_scene    : register(t0);
 StructuredBuffer<Vertex>        g_vertices : register(t1);
@@ -70,10 +69,14 @@ TriangleHitGroup hit_group = {
 [shader("raygeneration")]
 void rgen() {
     RayDesc ray;
-    ray.Direction  = float3(0, 0, 1);
-    ray.Origin     = float3(2*float2(DispatchRaysIndex().xy) / float2(DispatchRaysDimensions().xy), -1);
-    ray.Origin.xy += -1;
-    ray.Origin.y  *= -1;
+    ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
+
+    ray.Direction.xy = 2*(float2(DispatchRaysIndex().xy) + 0.5) / float2(DispatchRaysDimensions().xy) - 1;
+    ray.Direction.x *= g.camera_aspect;
+    ray.Direction.y *= -1;
+    ray.Direction.z = -g.camera_focal_length;
+
+    ray.Direction = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
 
     ray.TMin = 0.0001;
     ray.TMax = 1000;

@@ -22,6 +22,7 @@
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
 #include "types.h"
+using namespace DirectX;
 
 #include "out/raytracing.hlsl.h"
 
@@ -34,6 +35,8 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #define MAGIC_WIDTH (WIDTH - 16)
 #define HEIGHT 720
 #define MAGIC_HEIGHT ( HEIGHT - 39 )
+#define ASPECT ((float) MAGIC_WIDTH / (float) MAGIC_HEIGHT)
+
 #define PIXEL_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
 
 #define SWAPCHAIN_BUFFER_COUNT 2
@@ -58,24 +61,33 @@ LRESULT CALLBACK WindowProc(
     }
 }
 
-ID3D12Resource* copy_to_upload_buffer(ID3D12Device* device, void* data, UINT size_in_bytes) {
-    ID3D12Resource* resource = NULL;
+void set_buffer_contents(ID3D12Resource* buffer, void* data, UINT size_in_bytes) {
+    if (!data) return;
+
+    void* mapped_ptr;
+    CHECK_RESULT(buffer->Map(0, &CD3DX12_RANGE(0, 0), &mapped_ptr));
+    {
+        memcpy(mapped_ptr, data, size_in_bytes);
+    }
+    buffer->Unmap(0, NULL);
+}
+
+float clamp(float x, float a, float b) {
+    return min(max(x, b), a);
+}
+
+ID3D12Resource* create_upload_buffer(ID3D12Device* device, void* data, UINT size_in_bytes) {
+    ID3D12Resource* buffer = NULL;
     CHECK_RESULT(device->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
         &CD3DX12_RESOURCE_DESC::Buffer(size_in_bytes), D3D12_RESOURCE_STATE_GENERIC_READ,
         NULL,
-        IID_PPV_ARGS(&resource)
+        IID_PPV_ARGS(&buffer)
     ));
-
-    void* mapped_ptr;
-    CHECK_RESULT(resource->Map(0, &CD3DX12_RANGE(0, 0), &mapped_ptr));
-    {
-        memcpy(mapped_ptr, data, size_in_bytes);
-    }
-    resource->Unmap(0, NULL);
-
-    return resource;
+    set_buffer_contents(buffer, data, size_in_bytes);
+    return buffer;
 }
+
 
 int WINAPI wWinMain(
     HINSTANCE hInstance,
@@ -268,13 +280,13 @@ int WINAPI wWinMain(
     CHECK_RESULT(device->CreateRootSignature(0, raytracing_hlsl_bytecode, _countof(raytracing_hlsl_bytecode), IID_PPV_ARGS(&raytracing_global_root_signature)));
 
     // build trivial shader tables
-    ID3D12Resource* rgen_shader_table = copy_to_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"rgen"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+    ID3D12Resource* rgen_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"rgen"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
     SET_NAME(rgen_shader_table);
 
-    ID3D12Resource* hit_group_shader_table = copy_to_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+    ID3D12Resource* hit_group_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
     SET_NAME(hit_group_shader_table);
 
-    ID3D12Resource* miss_shader_table = copy_to_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"miss"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+    ID3D12Resource* miss_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"miss"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
     SET_NAME(miss_shader_table);
 
     // ASSET LOADING
@@ -283,7 +295,7 @@ int WINAPI wWinMain(
     ID3D12Resource* tlas_buffer = NULL;
     {
         Vertex vb_data[] = {
-            { { 0.0,  0.25, 0.0 }, { 1.0, 0.0, 0.0 } },
+            { { 0.25, 0.25, 0.0 }, { 1.0, 0.0, 0.0 } },
             { { 0.25,-0.25, 0.0 }, { 0.0, 1.0, 0.0 } },
             { {-0.25,-0.25, 0.0 }, { 0.0, 0.0, 1.0 } }
         };
@@ -292,7 +304,7 @@ int WINAPI wWinMain(
         };
 
         // upload geometry and create SRVs
-        ID3D12Resource* vb = copy_to_upload_buffer(device, vb_data, sizeof(vb_data)); {
+        ID3D12Resource* vb = create_upload_buffer(device, vb_data, sizeof(vb_data)); {
             D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
             srv_desc.Format                  = DXGI_FORMAT_UNKNOWN;
             srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
@@ -304,7 +316,7 @@ int WINAPI wWinMain(
             device->CreateShaderResourceView(vb, &srv_desc, CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), VB_DESCRIPTOR_INDEX, descriptor_size));
             SET_NAME(vb);
         }
-        ID3D12Resource* ib = copy_to_upload_buffer(device, ib_data, sizeof(ib_data)); {
+        ID3D12Resource* ib = create_upload_buffer(device, ib_data, sizeof(ib_data)); {
             D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
             srv_desc.Format                  = DXGI_FORMAT_R32_TYPELESS;
             srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
@@ -395,7 +407,7 @@ int WINAPI wWinMain(
             instance_desc.InstanceMask = 1;
             instance_desc.AccelerationStructure = blas_buffer->GetGPUVirtualAddress();
 
-            instance_descs_buffer = copy_to_upload_buffer(device, &instance_desc, sizeof(instance_desc));
+            instance_descs_buffer = create_upload_buffer(device, &instance_desc, sizeof(instance_desc));
             SET_NAME(instance_descs_buffer);
         }
 
@@ -434,10 +446,13 @@ int WINAPI wWinMain(
         scratch_buffer->Release();
     }
 
+    RaytracingGlobals raytracing_globals = {};
+    ID3D12Resource*   raytracing_globals_buffer = create_upload_buffer(device, NULL, sizeof(raytracing_globals));
+
     // MAIN LOOP
 
     while (true) {
-        // FRAME SETUP
+        // SETUP
 
         // synchronize with device
         // TODO: pipeline frames
@@ -452,7 +467,8 @@ int WINAPI wWinMain(
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
-        static bool show_demo_window = true; if (show_demo_window) ImGui::ShowDemoWindow(&show_demo_window);
+        // static bool show_demo_window = true; if (show_demo_window) ImGui::ShowDemoWindow(&show_demo_window);
+        ImGui::Begin("debug menu");
 
         // event handler
         MSG msg = {};
@@ -462,7 +478,39 @@ int WINAPI wWinMain(
             DispatchMessage(&msg);
         }
 
-        // RENDER FRAME
+        // UPDATE
+
+        { // camera
+            ImGui::Text("camera");
+
+            static float azimuth   = 0;
+            static float elevation = TAU/8;
+            static float distance  = 1;
+            static float fov_x     = TAU/4;
+            static float fov_y     = fov_x / ASPECT;
+
+            ImGui::SliderAngle("azimuth",   &azimuth);
+            ImGui::SliderAngle("elevation", &elevation, -85, 85);
+            ImGui::DragFloat("distance", &distance, 0.1, 0.1, FLT_MAX);
+
+            if (ImGui::SliderAngle("fov x", &fov_x, 5,        175))        fov_y = fov_x / ASPECT;
+            if (ImGui::SliderAngle("fov y", &fov_y, 5/ASPECT, 175/ASPECT)) fov_x = fov_y * ASPECT;
+
+            XMVECTOR camera_pos = XMVectorSet(
+                -sinf(azimuth) * cosf(elevation) * distance,
+                -cosf(azimuth) * cosf(elevation) * distance,
+                                 sinf(elevation) * distance,
+                1
+            );
+            raytracing_globals.camera_aspect = ASPECT;
+            raytracing_globals.camera_focal_length = 1 / tanf(fov_y/2);
+
+            XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
+            raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
+            set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
+        }
+
+        // RENDER
 
         UINT frame_index = swapchain->GetCurrentBackBufferIndex();
 
@@ -484,10 +532,12 @@ int WINAPI wWinMain(
             auto render_target_descriptor = CD3DX12_GPU_DESCRIPTOR_HANDLE(heap_base, RT_DESCRIPTOR_INDEX, descriptor_size);
             cmd_list->SetComputeRootDescriptorTable(0, render_target_descriptor);
 
-            cmd_list->SetComputeRootShaderResourceView(1, tlas_buffer->GetGPUVirtualAddress());
+            cmd_list->SetComputeRootConstantBufferView(1, raytracing_globals_buffer->GetGPUVirtualAddress());
+
+            cmd_list->SetComputeRootShaderResourceView(2, tlas_buffer->GetGPUVirtualAddress());
 
             auto vb_ib_descriptor = CD3DX12_GPU_DESCRIPTOR_HANDLE(heap_base, VB_DESCRIPTOR_INDEX, descriptor_size);
-            cmd_list->SetComputeRootDescriptorTable(2, vb_ib_descriptor);
+            cmd_list->SetComputeRootDescriptorTable(3, vb_ib_descriptor);
         }
 
         // raytracing
@@ -519,7 +569,10 @@ int WINAPI wWinMain(
 
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(raytracing_render_target, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 
+        // FINALIZE
+
         // render imgui
+        ImGui::End();
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(rtvs[frame_index], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET));
         auto rtv_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(rtv_heap->GetCPUDescriptorHandleForHeapStart(), frame_index, rtv_descriptor_size);
         cmd_list->OMSetRenderTargets(1, &rtv_descriptor, FALSE, NULL);

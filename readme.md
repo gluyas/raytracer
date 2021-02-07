@@ -12,4 +12,6 @@ From MSVC x64 developer command prompt (or `cmd` with `vcvars64.bat`):
 
 - `run_last` to run the previous successful build
 
-- Further MSVC arguments can be supplied to `build`, `build_lib`, and `run`, such as `/Zi`, `/O2`, etc. to control compiler output
+## Matrix Conventions
+
+Unless explicitly stated, all shader and host code uses row-major matrices with premultiplication and row vectors. Both world and camera space use right-handed coordinate systems: World space with Z-up, Y-forward, and X-right; Camera space with Y-up, X-right, and looking towards the negative Z direction.

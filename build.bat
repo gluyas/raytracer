@@ -1,9 +1,11 @@
 @echo off
 
 dxc ^
-    -T lib_6_3 ^
-    -Fh out/raytracing.hlsl.h /Vn raytracing_hlsl_bytecode ^
+    -T lib_6_3 -Zpr ^
+    -Fh out\raytracing.hlsl.h /Vn raytracing_hlsl_bytecode ^
     ^
+    -I src\ ^
+    -D HLSL ^
     src/raytracing.hlsl
 
 if %ERRORLEVEL% neq 0 (
