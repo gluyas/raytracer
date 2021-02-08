@@ -149,16 +149,6 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
                 assert(false);
             }
 
-            // create rudimentary face normals if vertex normals were not specified
-            // TODO: use weighted normals
-            XMFLOAT3 face_normal;
-            if (!vn_indices_count) {
-                XMVECTOR a = XMLoadFloat3(&vs[v_indices[0]]);
-                XMVECTOR b = XMLoadFloat3(&vs[v_indices[1]]) - a;
-                XMVECTOR c = XMLoadFloat3(&vs[v_indices[2]]) - a;
-                XMStoreFloat3(&face_normal, XMVector3Normalize(XMVector3Cross(b, c)));
-            }
-
             // create the vertices from the indexed data
             // TODO: deduplicate
             for (int i = 0; i < verts_count; i++) {
@@ -166,7 +156,14 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
                 vertex.position = vs[v_indices[i]];
 
                 if (vn_indices_count) vertex.normal = vns[vn_indices[i]];
-                else                  vertex.normal = face_normal;
+                else {
+                    // create rudimentary face normals if vertex normals were not specified
+                    // TODO: generate weighted vertex normals
+                    XMVECTOR a = XMLoadFloat3(&vs[v_indices[0]]);
+                    XMVECTOR b = XMLoadFloat3(&vs[v_indices[1]]) - a;
+                    XMVECTOR c = XMLoadFloat3(&vs[v_indices[2]]) - a;
+                    XMStoreFloat3(&vertex.normal, XMVector3Normalize(XMVector3Cross(b, c)));
+                }
                 // if (vt_indices_count); // TODO: handle uv coordinates
                 array_push(vertices, vertex);
             }

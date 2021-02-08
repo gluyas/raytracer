@@ -41,6 +41,12 @@ inline uint3 load_vertex_indices(uint triangle_index) {
     return indices;
 }
 
+LocalRootSignature local_root_signature = {
+    "RootConstants(b1, num32BitConstants = 3)," // 0: l
+};
+
+ConstantBuffer<RaytracingLocals> l : register(b1);
+
 // PIPELINE CONFIGURATION
 
 struct RayPayload {
@@ -85,7 +91,7 @@ void rgen() {
     payload.color = 0;
     TraceRay(
         g_scene, RAY_FLAG_NONE, 0xff,
-        0, 0, 0,
+        0, 1, 0,
         ray, payload
     );
 
@@ -94,12 +100,13 @@ void rgen() {
 
 [shader("closesthit")]
 void chit(inout RayPayload payload, Attributes attr) {
-    uint3 indices = load_vertex_indices(PrimitiveIndex());
+    // uint3 indices = load_vertex_indices(PrimitiveIndex());
 
-    float3 normal_x = abs(g_vertices[indices.x].normal);
-    payload.color  = normal_x;
-    payload.color += attr.barycentrics.x * (abs(g_vertices[indices.y].normal) - normal_x);
-    payload.color += attr.barycentrics.y * (abs(g_vertices[indices.z].normal) - normal_x);
+    // float3 normal_x = abs(g_vertices[indices.x].normal);
+    // payload.color  = normal_x;
+    // payload.color += attr.barycentrics.x * (abs(g_vertices[indices.y].normal) - normal_x);
+    // payload.color += attr.barycentrics.y * (abs(g_vertices[indices.z].normal) - normal_x);
+    payload.color = l.color / RayTCurrent();
 }
 
 [shader("miss")]

@@ -283,38 +283,72 @@ int WINAPI wWinMain(
     ID3D12RootSignature* raytracing_global_root_signature = NULL;
     CHECK_RESULT(device->CreateRootSignature(0, raytracing_hlsl_bytecode, _countof(raytracing_hlsl_bytecode), IID_PPV_ARGS(&raytracing_global_root_signature)));
 
-    // build trivial shader tables
+    // ASSET LOADING
+
+    struct GeometryInstance {
+        const char* filename;
+        XMFLOAT3 color;
+        // TODO: hit group
+    };
+
+    // TODO: use actual reflectance values
+    // TODO: merge geometries with identical local arguments
+    GeometryInstance scene_objects[] = {
+        { "data/cornell/floor.obj",     { 1, 1, 1 } },
+        { "data/cornell/back.obj",      { 1, 1, 1 } },
+        { "data/cornell/ceiling.obj",   { 1, 1, 1 } },
+        { "data/cornell/greenwall.obj", { 0, 1, 0 } },
+        { "data/cornell/redwall.obj",   { 1, 0, 0 } },
+        { "data/cornell/smallbox.obj",  { 1, 1, 1 } },
+        { "data/cornell/largebox.obj",  { 1, 1, 1 } },
+        { "data/cornell/luminaire.obj", { 0, 0, 0 } },
+    };
+
+    // build shader tables
     ID3D12Resource* rgen_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"rgen"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
     SET_NAME(rgen_shader_table);
 
-    ID3D12Resource* hit_group_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-    SET_NAME(hit_group_shader_table);
+    __declspec(align(32)) struct ShaderRecord {
+        char ident[D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES];
+        RaytracingLocals locals;
+    };
+
+    ID3D12Resource* hit_group_shader_table = NULL; {
+        ShaderRecord shader_table[_countof(scene_objects)] = {};
+        for (int i = 0; i < _countof(scene_objects); i++) {
+            memcpy(shader_table[i].ident, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+            shader_table[i].locals.color = scene_objects[i].color;
+            // TODO: move into blas creation routine and include
+        }
+
+        hit_group_shader_table = create_upload_buffer(device, shader_table, sizeof(shader_table));
+        SET_NAME(hit_group_shader_table);
+    }
 
     ID3D12Resource* miss_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"miss"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
     SET_NAME(miss_shader_table);
 
-    // ASSET LOADING
-
     ID3D12Resource* blas_buffer = NULL;
     ID3D12Resource* tlas_buffer = NULL;
     {
-        const char* cornell_box_objs[] = {
-            "data/cornell/floor.obj",
-            "data/cornell/back.obj",
-            "data/cornell/ceiling.obj",
-            "data/cornell/greenwall.obj",
-            "data/cornell/redwall.obj",
-            "data/cornell/smallbox.obj",
-            "data/cornell/largebox.obj",
-            "data/cornell/luminaire.obj",
-        };
+        D3D12_RAYTRACING_GEOMETRY_DESC geometry_descs[_countof(scene_objects)] = {};
 
+        // parse meshes into a single pair of index and vertex buffers
         Array<Vertex> vb_data = {};
         Array<Index>  ib_data = {};
-        for (int i = 0; i < _countof(cornell_box_objs); i++) {
-            parse_obj_file(cornell_box_objs[i], &vb_data, &ib_data);
+        for (int i = 0; i < _countof(scene_objects); i++) {
+            // record offset into the ib array - combine with virtual address after geometry upload
+            Index ib_offset = ib_data.len;
+            geometry_descs[i].Triangles.IndexBuffer = ib_offset * sizeof(Index);
+
+            // append mesh data to shared ib and vb
+            parse_obj_file(scene_objects[i].filename, &vb_data, &ib_data);
+
+            // record number of indices
+            geometry_descs[i].Triangles.IndexCount  = ib_data.len - ib_offset;
         }
-        while (ib_data.len % 4 != 0) array_push(&ib_data, (Index) 0);
+        // pad index buffer
+        // while (ib_data.len % 4 != 0) array_push(&ib_data, (Index) 0);
 
         // upload geometry and create SRVs
         ID3D12Resource* vb = create_upload_buffer(device, vb_data.ptr, vb_data.len*sizeof(Vertex)); {
@@ -342,32 +376,33 @@ int WINAPI wWinMain(
             SET_NAME(ib);
         }
 
+        // finalize geometry_descs
+        for (int i = 0; i < _countof(geometry_descs); i++) {
+            geometry_descs[i].Type  = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
+            geometry_descs[i].Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // disables any-hit shader
+
+            geometry_descs[i].Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
+            geometry_descs[i].Triangles.VertexCount  = vb_data.len;
+            geometry_descs[i].Triangles.VertexBuffer.StartAddress  = vb->GetGPUVirtualAddress();
+            geometry_descs[i].Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
+
+            geometry_descs[i].Triangles.IndexFormat  = DXGI_FORMAT_R16_UINT;
+            // IndexCount was written in previous loop; add address to the offset stored in IndexBuffer
+            geometry_descs[i].Triangles.IndexBuffer += ib->GetGPUVirtualAddress();
+        }
+
         // build raytracing geometry
         // TODO: extract into a callable procedure
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC blas_build = {};
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_DESC tlas_build = {};
-
-        // triangle mesh
-        D3D12_RAYTRACING_GEOMETRY_DESC geometry = {};
-        geometry.Type  = D3D12_RAYTRACING_GEOMETRY_TYPE_TRIANGLES;
-        geometry.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // disables any-hit shader
-
-        geometry.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-        geometry.Triangles.VertexCount  = vb_data.len;
-        geometry.Triangles.VertexBuffer.StartAddress  = vb->GetGPUVirtualAddress();
-        geometry.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
-
-        geometry.Triangles.IndexFormat  = DXGI_FORMAT_R16_UINT;
-        geometry.Triangles.IndexCount   = ib_data.len;
-        geometry.Triangles.IndexBuffer  = ib->GetGPUVirtualAddress();
 
         // blas inputs
         D3D12_BUILD_RAYTRACING_ACCELERATION_STRUCTURE_INPUTS* blas_inputs = &blas_build.Inputs;
         blas_inputs->Type  = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_TYPE_BOTTOM_LEVEL;
         blas_inputs->Flags = D3D12_RAYTRACING_ACCELERATION_STRUCTURE_BUILD_FLAG_PREFER_FAST_TRACE;
         blas_inputs->DescsLayout    = D3D12_ELEMENTS_LAYOUT_ARRAY;
-        blas_inputs->NumDescs       = 1;
-        blas_inputs->pGeometryDescs = &geometry;
+        blas_inputs->NumDescs       = _countof(geometry_descs);
+        blas_inputs->pGeometryDescs = geometry_descs;
 
         D3D12_RAYTRACING_ACCELERATION_STRUCTURE_PREBUILD_INFO blas_prebuild = {};
         device->GetRaytracingAccelerationStructurePrebuildInfo(blas_inputs, &blas_prebuild);
@@ -561,7 +596,7 @@ int WINAPI wWinMain(
         D3D12_DISPATCH_RAYS_DESC dispatch_rays = {};
         dispatch_rays.HitGroupTable.StartAddress  = hit_group_shader_table->GetGPUVirtualAddress();
         dispatch_rays.HitGroupTable.SizeInBytes   = hit_group_shader_table->GetDesc().Width;
-        dispatch_rays.HitGroupTable.StrideInBytes = D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES; // TODO: calculate this
+        dispatch_rays.HitGroupTable.StrideInBytes = sizeof(ShaderRecord);
 
         dispatch_rays.MissShaderTable.StartAddress  = miss_shader_table->GetGPUVirtualAddress();
         dispatch_rays.MissShaderTable.SizeInBytes   = miss_shader_table->GetDesc().Width;

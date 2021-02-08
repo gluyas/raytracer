@@ -41,6 +41,11 @@ struct RaytracingGlobals {
     float  camera_focal_length;
 };
 
+struct RaytracingLocals {
+    // TODO: index buffer offset
+    FLOAT3 color;
+};
+
 #undef FLOAT2
 #undef FLOAT3
 #undef FLOAT4

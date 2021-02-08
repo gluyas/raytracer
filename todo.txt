@@ -1,10 +1,8 @@
 raytracing geometry build procedures
+better handling of multiple geometries
 
-d3d12 debug output
-shader compiler output
 consistent error/debug logging
 
-precompiled shaders
 fullscreen support
 
 control cursor icon
