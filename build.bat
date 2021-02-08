@@ -18,7 +18,7 @@ cl ^
     ^
     -Ilib -Ilib\imgui -Ilib\DirectXMath -I. ^
     -DUNICODE -DDEBUG ^
-    src\main.cpp ^
+    src\parse_obj.cpp src\main.cpp ^
     ^
     out\lib.lib ^
     user32.lib ^

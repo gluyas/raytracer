@@ -24,6 +24,10 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #include "types.h"
 using namespace DirectX;
 
+#include "array.h"
+
+#include "parse_obj.h"
+
 #include "out/raytracing.hlsl.h"
 
 // TODO: nicer error handling
@@ -61,7 +65,7 @@ LRESULT CALLBACK WindowProc(
     }
 }
 
-void set_buffer_contents(ID3D12Resource* buffer, void* data, UINT size_in_bytes) {
+void set_buffer_contents(ID3D12Resource* buffer, void* data, UINT64 size_in_bytes) {
     if (!data) return;
 
     void* mapped_ptr;
@@ -76,7 +80,7 @@ float clamp(float x, float a, float b) {
     return min(max(x, b), a);
 }
 
-ID3D12Resource* create_upload_buffer(ID3D12Device* device, void* data, UINT size_in_bytes) {
+ID3D12Resource* create_upload_buffer(ID3D12Device* device, void* data, UINT64 size_in_bytes) {
     ID3D12Resource* buffer = NULL;
     CHECK_RESULT(device->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
@@ -294,35 +298,44 @@ int WINAPI wWinMain(
     ID3D12Resource* blas_buffer = NULL;
     ID3D12Resource* tlas_buffer = NULL;
     {
-        Vertex vb_data[] = {
-            { { 0.25, 0.25, 0.0 }, { 1.0, 0.0, 0.0 } },
-            { { 0.25,-0.25, 0.0 }, { 0.0, 1.0, 0.0 } },
-            { {-0.25,-0.25, 0.0 }, { 0.0, 0.0, 1.0 } }
-        };
-        Index  ib_data[] = {
-            0, 1, 2, 0 // TODO: padding necessary?
+        const char* cornell_box_objs[] = {
+            "data/cornell/floor.obj",
+            "data/cornell/back.obj",
+            "data/cornell/ceiling.obj",
+            "data/cornell/greenwall.obj",
+            "data/cornell/redwall.obj",
+            "data/cornell/smallbox.obj",
+            "data/cornell/largebox.obj",
+            "data/cornell/luminaire.obj",
         };
 
+        Array<Vertex> vb_data = {};
+        Array<Index>  ib_data = {};
+        for (int i = 0; i < _countof(cornell_box_objs); i++) {
+            parse_obj_file(cornell_box_objs[i], &vb_data, &ib_data);
+        }
+        while (ib_data.len % 4 != 0) array_push(&ib_data, (Index) 0);
+
         // upload geometry and create SRVs
-        ID3D12Resource* vb = create_upload_buffer(device, vb_data, sizeof(vb_data)); {
+        ID3D12Resource* vb = create_upload_buffer(device, vb_data.ptr, vb_data.len*sizeof(Vertex)); {
             D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
             srv_desc.Format                  = DXGI_FORMAT_UNKNOWN;
             srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
             srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
-            srv_desc.Buffer.NumElements         = _countof(vb_data);
+            srv_desc.Buffer.NumElements         = vb_data.len;
             srv_desc.Buffer.StructureByteStride = sizeof(Vertex);
 
             device->CreateShaderResourceView(vb, &srv_desc, CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), VB_DESCRIPTOR_INDEX, descriptor_size));
             SET_NAME(vb);
         }
-        ID3D12Resource* ib = create_upload_buffer(device, ib_data, sizeof(ib_data)); {
+        ID3D12Resource* ib = create_upload_buffer(device, ib_data.ptr, ib_data.len*sizeof(Index)); {
             D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
             srv_desc.Format                  = DXGI_FORMAT_R32_TYPELESS;
             srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
             srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
 
-            srv_desc.Buffer.NumElements = sizeof(ib_data) / 4;
+            srv_desc.Buffer.NumElements = ib_data.len*sizeof(Index) / 4;
             srv_desc.Buffer.Flags       = D3D12_BUFFER_SRV_FLAG_RAW;
 
             device->CreateShaderResourceView(ib, &srv_desc, CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), IB_DESCRIPTOR_INDEX, descriptor_size));
@@ -340,12 +353,12 @@ int WINAPI wWinMain(
         geometry.Flags = D3D12_RAYTRACING_GEOMETRY_FLAG_OPAQUE; // disables any-hit shader
 
         geometry.Triangles.VertexFormat = DXGI_FORMAT_R32G32B32_FLOAT;
-        geometry.Triangles.VertexCount  = _countof(vb_data);
+        geometry.Triangles.VertexCount  = vb_data.len;
         geometry.Triangles.VertexBuffer.StartAddress  = vb->GetGPUVirtualAddress();
         geometry.Triangles.VertexBuffer.StrideInBytes = sizeof(Vertex);
 
         geometry.Triangles.IndexFormat  = DXGI_FORMAT_R16_UINT;
-        geometry.Triangles.IndexCount   = _countof(ib_data);
+        geometry.Triangles.IndexCount   = ib_data.len;
         geometry.Triangles.IndexBuffer  = ib->GetGPUVirtualAddress();
 
         // blas inputs
@@ -401,9 +414,12 @@ int WINAPI wWinMain(
         // tlas instance descs
         ID3D12Resource* instance_descs_buffer = NULL; {
             D3D12_RAYTRACING_INSTANCE_DESC instance_desc = {};
-            instance_desc.Transform[0][0] = 1;
-            instance_desc.Transform[1][1] = 1;
-            instance_desc.Transform[2][2] = 1;
+            instance_desc.Transform[0][0] =-0.001;
+            instance_desc.Transform[1][2] = 0.001;
+            instance_desc.Transform[2][1] = 0.001;
+            instance_desc.Transform[0][3] = 0.25;
+            instance_desc.Transform[1][3] =-0.25;
+            instance_desc.Transform[2][3] =-0.15;
             instance_desc.InstanceMask = 1;
             instance_desc.AccelerationStructure = blas_buffer->GetGPUVirtualAddress();
 
@@ -504,8 +520,9 @@ int WINAPI wWinMain(
             );
             raytracing_globals.camera_aspect = ASPECT;
             raytracing_globals.camera_focal_length = 1 / tanf(fov_y/2);
-
             XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
+// XMVECTOR focus = XMVectorSet(213, 548.79999, 227, 1);
+            // XMMATRIX view = XMMatrixLookAtRH(camera_pos, focus, g_XMIdentityR2);
             raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
             set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
         }

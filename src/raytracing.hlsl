@@ -96,10 +96,10 @@ void rgen() {
 void chit(inout RayPayload payload, Attributes attr) {
     uint3 indices = load_vertex_indices(PrimitiveIndex());
 
-    float3 color_x = g_vertices[indices.x].color;
-    payload.color  = color_x;
-    payload.color += attr.barycentrics.x * (g_vertices[indices.y].color - color_x);
-    payload.color += attr.barycentrics.y * (g_vertices[indices.z].color - color_x);
+    float3 normal_x = abs(g_vertices[indices.x].normal);
+    payload.color  = normal_x;
+    payload.color += attr.barycentrics.x * (abs(g_vertices[indices.y].normal) - normal_x);
+    payload.color += attr.barycentrics.y * (abs(g_vertices[indices.z].normal) - normal_x);
 }
 
 [shader("miss")]

@@ -13,6 +13,7 @@
 #else
 
 #pragma once
+#include <BaseTsd.h>
 #include <DirectXMath.h>
 
 #define FLOAT2 DirectX::XMFLOAT2
@@ -31,7 +32,7 @@ typedef UINT16 Index;
 
 struct Vertex {
     FLOAT3 position;
-    FLOAT3 color;
+    FLOAT3 normal;
 };
 
 struct RaytracingGlobals {
