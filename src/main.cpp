@@ -289,10 +289,10 @@ int WINAPI wWinMain(
             dxil_subobject->SetDXILLibrary(&bytecode);
         }
 
-        // auto hit_group_subobject = pso_desc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>(); {
-        //     hit_group_subobject->SetClosestHitShaderImport(L"chit");
-        //     hit_group_subobject->SetHitGroupExport(L"hit_group");
-        //     hit_group_subobject->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
+        // auto lambert_hit_group_subobject = pso_desc.CreateSubobject<CD3DX12_HIT_GROUP_SUBOBJECT>(); {
+        //     lambert_hit_group_subobject->SetClosestHitShaderImport(L"lambert_chit");
+        //     lambert_hit_group_subobject->SetHitGroupExport(L"lambert_hit_group");
+        //     lambert_hit_group_subobject->SetHitGroupType(D3D12_HIT_GROUP_TYPE_TRIANGLES);
         // }
 
         CHECK_RESULT(device->CreateStateObject(pso_desc, IID_PPV_ARGS(&raytracing_pso)));
@@ -304,23 +304,36 @@ int WINAPI wWinMain(
 
     // ASSET LOADING
 
+    enum Material {
+        Lambert,
+        Light,
+
+        Count,
+    };
+
+    void* material_hit_group_identifiers[Material::Count] = {}; {
+        material_hit_group_identifiers[Lambert] = raytracing_properties->GetShaderIdentifier(L"lambert_hit_group");
+        material_hit_group_identifiers[Light]   = raytracing_properties->GetShaderIdentifier(L"light_hit_group");
+    }
+
     struct GeometryInstance {
         const char* filename;
+        Material material;
         XMFLOAT3 color;
-        // TODO: hit group
     };
 
     // TODO: use actual reflectance values
     // TODO: merge geometries with identical local arguments
     GeometryInstance scene_objects[] = {
-        { "data/cornell/floor.obj",     { 1, 1, 1 } },
-        { "data/cornell/back.obj",      { 1, 1, 1 } },
-        { "data/cornell/ceiling.obj",   { 1, 1, 1 } },
-        { "data/cornell/greenwall.obj", { 0, 1, 0 } },
-        { "data/cornell/redwall.obj",   { 1, 0, 0 } },
-        { "data/cornell/smallbox.obj",  { 1, 1, 1 } },
-        { "data/cornell/largebox.obj",  { 1, 1, 1 } },
-        { "data/cornell/luminaire.obj", { 0, 0, 0 } },
+        { "data/cornell/floor.obj",     Lambert, { 1, 1, 1 } },
+        { "data/cornell/back.obj",      Lambert, { 1, 1, 1 } },
+        { "data/cornell/ceiling.obj",   Lambert, { 1, 1, 1 } },
+        { "data/cornell/greenwall.obj", Lambert, { 0, 1, 0 } },
+        { "data/cornell/redwall.obj",   Lambert, { 1, 0, 0 } },
+        { "data/cornell/largebox.obj",  Lambert, { 1, 1, 1 } },
+
+        { "data/cornell/smallbox.obj",  Light, { 2,  2,  2  } },
+        { "data/cornell/luminaire.obj", Light, { 10, 10, 10 } },
     };
 
     __declspec(align(32)) struct ShaderRecord {
@@ -362,7 +375,8 @@ int WINAPI wWinMain(
         hit_group_shader_table = NULL; {
             ShaderRecord shader_table[_countof(scene_objects)] = {};
             for (int i = 0; i < _countof(scene_objects); i++) {
-                memcpy(shader_table[i].ident, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+                void* hit_group_ident = material_hit_group_identifiers[scene_objects[i].material];
+                memcpy(shader_table[i].ident, hit_group_ident, D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
                 shader_table[i].locals.color = scene_objects[i].color;
                 shader_table[i].locals.primitive_index_offset = geometry_descs[i].Triangles.IndexBuffer / sizeof(Index) / 3;
             }

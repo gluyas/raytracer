@@ -44,6 +44,18 @@ inline uint3 load_vertex_indices(uint triangle_index) {
     return indices;
 }
 
+inline float3 get_interpolated_normal(uint3 vertex_indices, float2 barycentrics) {
+    float3 normal;
+    float3 normal_x = g_vertices[vertex_indices.x].normal;
+    normal  = normal_x;
+    normal += barycentrics.x * (g_vertices[vertex_indices.y].normal - normal_x);
+    normal += barycentrics.y * (g_vertices[vertex_indices.z].normal - normal_x);
+    normal  = mul(float4(normal, 0), ObjectToWorld4x3());
+    normal *= -sign(dot(WorldRayDirection(), normal));
+    normal  = normalize(normal);
+    return normal;
+}
+
 LocalRootSignature local_root_signature = {
     "RootConstants(b1, num32BitConstants = 3)," // 0: l
 };
@@ -70,12 +82,6 @@ RaytracingPipelineConfig pipeline_config = {
     1   // max recursion depth
 };
 
-// TODO: generate hitgroups for each material
-TriangleHitGroup hit_group = {
-    "",
-    "chit"
-};
-
 // SHADER CODE
 
 [shader("raygeneration")]
@@ -95,7 +101,7 @@ void rgen() {
         ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
 
         ray.Direction.xy  = DispatchRaysIndex().xy + 0.5;                               // pixel centers
-        ray.Direction.xy += 0.5 * float2(random11(payload.rng), random11(payload.rng)); // random offset inside pixel
+        // ray.Direction.xy += 0.5 * float2(random11(payload.rng), random11(payload.rng)); // random offset inside pixel
         ray.Direction.xy  = 2*ray.Direction.xy / DispatchRaysDimensions().xy - 1;       // normalize to clip coordinates
         ray.Direction.x  *= g.camera_aspect;
         ray.Direction.y  *= -1;
@@ -111,14 +117,15 @@ void rgen() {
             );
             ray_color *= payload.color;
 
-            if (!any(payload.scatter)) break;
+            if (!any(payload.scatter)) {
+                pixel_color.rgb += ray_color;
+                break;
+            }
             ray.Origin   += ray.Direction * payload.t;
             ray.Direction = payload.scatter;
         }
-        pixel_color.rgb += clamp(ray_color, 0, 1);
     }
     pixel_color /= SAMPLES;
-    pixel_color.a = 1;
 
     if (g.accumulator_count != 0) {
         // TODO: prevent floating-point accumulators from growing too large
@@ -128,28 +135,39 @@ void rgen() {
     g_render_target     [DispatchRaysIndex().xy] = pixel_color / (g.accumulator_count+1);
 }
 
-[shader("closesthit")]
-void chit(inout RayPayload payload, Attributes attr) {
-    uint3 indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+TriangleHitGroup lambert_hit_group = {
+    "",
+    "lambert_chit"
+};
 
-    float3 normal; {
-        float3 normal_x = g_vertices[indices.x].normal;
-        normal  = normal_x;
-        normal += attr.barycentrics.x * (g_vertices[indices.y].normal - normal_x);
-        normal += attr.barycentrics.y * (g_vertices[indices.z].normal - normal_x);
-        normal  = mul(float4(normal, 0), transpose(ObjectToWorld3x4()));
-        normal *= -sign(dot(WorldRayDirection(), normal));
-        normal  = normalize(normal);
-    }
+[shader("closesthit")]
+void lambert_chit(inout RayPayload payload, Attributes attr) {
+    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+    float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
 
     payload.scatter = random_on_hemisphere(payload.rng, normal);
     payload.color   = l.color * dot(normal, payload.scatter);
     payload.t       = RayTCurrent();
 }
 
+TriangleHitGroup light_hit_group = {
+    "",
+    "light_chit"
+};
+
+[shader("closesthit")]
+void light_chit(inout RayPayload payload, Attributes attr) {
+    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+    float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
+
+    payload.scatter = 0;
+    payload.color   = l.color; // TODO: directional lights
+    payload.t       = RayTCurrent();
+}
+
 [shader("miss")]
 void miss(inout RayPayload payload) {
-    payload.color   = 2;
+    payload.color   = 0;
     payload.scatter = 0;
     payload.t       = INFINITY;
 }
