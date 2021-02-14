@@ -1,18 +1,21 @@
+#pragma once
+
 #define TAU  6.28318530717958647692528676655900577
 #define TAUf 6.28318530717958647692528676655900577f
 
 #ifdef HLSL
+
+#define INFINITY (1.0 / 0.0)
 
 #define FLOAT2 float2
 #define FLOAT3 float3
 #define FLOAT4 float4
 #define VECTOR float4
 #define MATRIX float4x4
-#define UINT   uint
+#define UINT32 uint
 
 #else
 
-#pragma once
 #include <BaseTsd.h>
 #include <DirectXMath.h>
 
@@ -42,7 +45,7 @@ struct RaytracingGlobals {
 };
 
 struct RaytracingLocals {
-    // TODO: index buffer offset
+    UINT32 primitive_index_offset;
     FLOAT3 color;
 };
 

@@ -1,5 +1,7 @@
 #include "types.h"
 
+#include "random.hlsl"
+
 // SHADER RESOURCES
 
 GlobalRootSignature global_root_signature = {
@@ -50,13 +52,16 @@ ConstantBuffer<RaytracingLocals> l : register(b1);
 // PIPELINE CONFIGURATION
 
 struct RayPayload {
+    uint   rng;
+    float  t;
+    float3 scatter;
     float3 color;
 };
 
 typedef BuiltInTriangleIntersectionAttributes Attributes;
 
 RaytracingShaderConfig shader_config = {
-    16, // max payload size
+    32, // max payload size
     8   // max attribute size
 };
 
@@ -74,42 +79,69 @@ TriangleHitGroup hit_group = {
 
 [shader("raygeneration")]
 void rgen() {
+    RayPayload payload;
+    payload.rng = hash(DispatchRaysIndex().xy);
+
     RayDesc ray;
-    ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
-
-    ray.Direction.xy = 2*(float2(DispatchRaysIndex().xy) + 0.5) / float2(DispatchRaysDimensions().xy) - 1;
-    ray.Direction.x *= g.camera_aspect;
-    ray.Direction.y *= -1;
-    ray.Direction.z = -g.camera_focal_length;
-
-    ray.Direction = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
 
     ray.TMin = 0.0001;
     ray.TMax = 1000;
 
-    RayPayload payload;
-    payload.color = 0;
-    TraceRay(
-        g_scene, RAY_FLAG_NONE, 0xff,
-        0, 1, 0,
-        ray, payload
-    );
+    const uint SAMPLES = 16;
+    const uint BOUNCES = 4;
+    float3 pixel_color = 0;
+    for (uint sample_index = 0; sample_index < SAMPLES; sample_index++) {
+        ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
 
-    g_render_target[DispatchRaysIndex().xy] = float4(payload.color, 1);
+        ray.Direction.xy  = DispatchRaysIndex().xy + 0.5;                               // pixel centers
+        ray.Direction.xy += 0.5 * float2(random11(payload.rng), random11(payload.rng)); // random offset inside pixel
+        ray.Direction.xy  = 2*ray.Direction.xy / DispatchRaysDimensions().xy - 1;       // normalize to clip coordinates
+        ray.Direction.x  *= g.camera_aspect;
+        ray.Direction.y  *= -1;
+        ray.Direction.z   = -g.camera_focal_length;
+        ray.Direction     = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
+
+        float3 ray_color = 1;
+        for (uint bounce_index = 0; bounce_index < BOUNCES; bounce_index++) {
+            TraceRay(
+                g_scene, RAY_FLAG_NONE, 0xff,
+                0, 1, 0,
+                ray, payload
+            );
+            ray_color *= payload.color;
+
+            if (!any(payload.scatter)) break;
+            ray.Origin   += ray.Direction * payload.t;
+            ray.Direction = payload.scatter;
+        }
+        pixel_color += ray_color;
+    }
+    pixel_color /= SAMPLES;
+    g_render_target[DispatchRaysIndex().xy] = float4(pixel_color, 1);
 }
 
 [shader("closesthit")]
 void chit(inout RayPayload payload, Attributes attr) {
-    // uint3 indices = load_vertex_indices(PrimitiveIndex());
+    uint3 indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
 
-    // float3 normal_x = abs(g_vertices[indices.x].normal);
-    // payload.color  = normal_x;
-    // payload.color += attr.barycentrics.x * (abs(g_vertices[indices.y].normal) - normal_x);
-    // payload.color += attr.barycentrics.y * (abs(g_vertices[indices.z].normal) - normal_x);
-    payload.color = l.color / RayTCurrent();
+    float3 normal; {
+        float3 normal_x = g_vertices[indices.x].normal;
+        normal  = normal_x;
+        normal += attr.barycentrics.x * (g_vertices[indices.y].normal - normal_x);
+        normal += attr.barycentrics.y * (g_vertices[indices.z].normal - normal_x);
+        normal  = mul(float4(normal, 0), transpose(ObjectToWorld3x4()));
+        normal *= -sign(dot(WorldRayDirection(), normal));
+        normal  = normalize(normal);
+    }
+
+    payload.scatter = random_on_hemisphere(payload.rng, normal);
+    payload.color   = l.color * dot(normal, payload.scatter);
+    payload.t       = RayTCurrent();
 }
 
 [shader("miss")]
 void miss(inout RayPayload payload) {
-    payload.color = 0;
+    payload.color   = 3;
+    payload.scatter = 0;
+    payload.t       = INFINITY;
 }

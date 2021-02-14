@@ -304,33 +304,18 @@ int WINAPI wWinMain(
         { "data/cornell/luminaire.obj", { 0, 0, 0 } },
     };
 
-    // build shader tables
-    ID3D12Resource* rgen_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"rgen"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-    SET_NAME(rgen_shader_table);
-
     __declspec(align(32)) struct ShaderRecord {
         char ident[D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES];
         RaytracingLocals locals;
     };
 
-    ID3D12Resource* hit_group_shader_table = NULL; {
-        ShaderRecord shader_table[_countof(scene_objects)] = {};
-        for (int i = 0; i < _countof(scene_objects); i++) {
-            memcpy(shader_table[i].ident, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-            shader_table[i].locals.color = scene_objects[i].color;
-            // TODO: move into blas creation routine and include
-        }
-
-        hit_group_shader_table = create_upload_buffer(device, shader_table, sizeof(shader_table));
-        SET_NAME(hit_group_shader_table);
-    }
-
-    ID3D12Resource* miss_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"miss"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
-    SET_NAME(miss_shader_table);
-
+    ID3D12Resource* rgen_shader_table      = NULL;
+    ID3D12Resource* hit_group_shader_table = NULL;
+    ID3D12Resource* miss_shader_table      = NULL;
     ID3D12Resource* blas_buffer = NULL;
     ID3D12Resource* tlas_buffer = NULL;
     {
+        // TODO: factor this procedure somehow
         D3D12_RAYTRACING_GEOMETRY_DESC geometry_descs[_countof(scene_objects)] = {};
 
         // parse meshes into a single pair of index and vertex buffers
@@ -348,7 +333,27 @@ int WINAPI wWinMain(
             geometry_descs[i].Triangles.IndexCount  = ib_data.len - ib_offset;
         }
         // pad index buffer
-        // while (ib_data.len % 4 != 0) array_push(&ib_data, (Index) 0);
+        while (ib_data.len % 4 != 0) array_push(&ib_data, (Index) 0);
+
+        // build shader tables
+        // these need access to the index buffer offsets
+        rgen_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"rgen"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+        SET_NAME(rgen_shader_table);
+
+        hit_group_shader_table = NULL; {
+            ShaderRecord shader_table[_countof(scene_objects)] = {};
+            for (int i = 0; i < _countof(scene_objects); i++) {
+                memcpy(shader_table[i].ident, raytracing_properties->GetShaderIdentifier(L"hit_group"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+                shader_table[i].locals.color = scene_objects[i].color;
+                shader_table[i].locals.primitive_index_offset = geometry_descs[i].Triangles.IndexBuffer / sizeof(Index) / 3;
+            }
+
+            hit_group_shader_table = create_upload_buffer(device, shader_table, sizeof(shader_table));
+            SET_NAME(hit_group_shader_table);
+        }
+
+        miss_shader_table = create_upload_buffer(device, raytracing_properties->GetShaderIdentifier(L"miss"), D3D12_SHADER_IDENTIFIER_SIZE_IN_BYTES);
+        SET_NAME(miss_shader_table);
 
         // upload geometry and create SRVs
         ID3D12Resource* vb = create_upload_buffer(device, vb_data.ptr, vb_data.len*sizeof(Vertex)); {
@@ -452,9 +457,9 @@ int WINAPI wWinMain(
             instance_desc.Transform[0][0] =-0.001;
             instance_desc.Transform[1][2] = 0.001;
             instance_desc.Transform[2][1] = 0.001;
-            instance_desc.Transform[0][3] = 0.25;
-            instance_desc.Transform[1][3] =-0.25;
-            instance_desc.Transform[2][3] =-0.15;
+            instance_desc.Transform[0][3] = 0.27;
+            instance_desc.Transform[1][3] =-0.27;
+            instance_desc.Transform[2][3] =-0.23;
             instance_desc.InstanceMask = 1;
             instance_desc.AccelerationStructure = blas_buffer->GetGPUVirtualAddress();
 
@@ -535,12 +540,13 @@ int WINAPI wWinMain(
             ImGui::Text("camera");
 
             static float azimuth   = 0;
-            static float elevation = TAU/8;
+            static float elevation = 0;
             static float distance  = 1;
             static float fov_x     = TAU/4;
             static float fov_y     = fov_x / ASPECT;
 
             ImGui::SliderAngle("azimuth",   &azimuth);
+            azimuth = fmod(azimuth + 3*TAU/2, TAU) - TAU/2;
             ImGui::SliderAngle("elevation", &elevation, -85, 85);
             ImGui::DragFloat("distance", &distance, 0.1, 0.1, FLT_MAX);
 
@@ -556,8 +562,6 @@ int WINAPI wWinMain(
             raytracing_globals.camera_aspect = ASPECT;
             raytracing_globals.camera_focal_length = 1 / tanf(fov_y/2);
             XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
-// XMVECTOR focus = XMVectorSet(213, 548.79999, 227, 1);
-            // XMMATRIX view = XMMatrixLookAtRH(camera_pos, focus, g_XMIdentityR2);
             raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
             set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
         }
