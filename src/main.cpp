@@ -41,6 +41,7 @@ using namespace DirectX;
 #define MAGIC_HEIGHT ( HEIGHT - 39 )
 #define ASPECT ((float) MAGIC_WIDTH / (float) MAGIC_HEIGHT)
 
+#define VSYNC 0
 #define PIXEL_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
 
 #define SWAPCHAIN_BUFFER_COUNT 2
@@ -191,12 +192,13 @@ int WINAPI wWinMain(
         CHECK_RESULT(HRESULT_FROM_WIN32(GetLastError()));
     }
 
-// TODO: better way of allocating descriptors
+// TODO: move to same header as HLSL root signature definition
 #define IMGUI_DESCRIPTOR_INDEX 0
 #define RT_DESCRIPTOR_INDEX 1
-#define VB_DESCRIPTOR_INDEX 2
+#define SAMPLE_ACCUMULATOR_DESCRIPTOR_INDEX (RT_DESCRIPTOR_INDEX + 1)
+#define VB_DESCRIPTOR_INDEX 3
 #define IB_DESCRIPTOR_INDEX (VB_DESCRIPTOR_INDEX + 1)
-#define DESCRIPTORS_COUNT 4
+#define DESCRIPTORS_COUNT 5
 
     ID3D12DescriptorHeap* descriptor_heap = NULL; {
         D3D12_DESCRIPTOR_HEAP_DESC descriptor_heap_desc = {};
@@ -234,7 +236,10 @@ int WINAPI wWinMain(
     ID3D12GraphicsCommandList4* cmd_list = NULL;
     CHECK_RESULT(device->CreateCommandList1(0, D3D12_COMMAND_LIST_TYPE_DIRECT, D3D12_COMMAND_LIST_FLAG_NONE, IID_PPV_ARGS(&cmd_list)));
 
-    ID3D12Resource* raytracing_render_target = NULL; {
+    ID3D12Resource* raytracing_render_target      = NULL;
+    ID3D12Resource* raytracing_sample_accumulator = NULL;
+    {
+        // render target
         D3D12_RESOURCE_DESC resource_desc = {};
         resource_desc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         resource_desc.Format             = PIXEL_FORMAT;
@@ -256,8 +261,22 @@ int WINAPI wWinMain(
         ));
         SET_NAME(raytracing_render_target);
 
-        auto descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), RT_DESCRIPTOR_INDEX, descriptor_size);
-        device->CreateUnorderedAccessView(raytracing_render_target, NULL, NULL, descriptor);
+        auto render_target_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), RT_DESCRIPTOR_INDEX, descriptor_size);
+        device->CreateUnorderedAccessView(raytracing_render_target, NULL, NULL, render_target_descriptor);
+
+        // sample accumulator
+        resource_desc.Format = DXGI_FORMAT_R32G32B32A32_FLOAT;
+
+        CHECK_RESULT(device->CreateCommittedResource(
+            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+            &resource_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
+            NULL,
+            IID_PPV_ARGS(&raytracing_sample_accumulator)
+        ));
+        SET_NAME(raytracing_sample_accumulator);
+
+        auto sample_accumulator_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), SAMPLE_ACCUMULATOR_DESCRIPTOR_INDEX, descriptor_size);
+        device->CreateUnorderedAccessView(raytracing_sample_accumulator, NULL, NULL, sample_accumulator_descriptor);
     }
 
     ID3D12StateObject*           raytracing_pso        = NULL;
@@ -536,7 +555,7 @@ int WINAPI wWinMain(
 
         // UPDATE
 
-        { // camera
+        bool update_camera = false; { // camera
             ImGui::Text("camera");
 
             static float azimuth   = 0;
@@ -545,26 +564,34 @@ int WINAPI wWinMain(
             static float fov_x     = TAU/4;
             static float fov_y     = fov_x / ASPECT;
 
-            ImGui::SliderAngle("azimuth",   &azimuth);
+            update_camera |= ImGui::SliderAngle("azimuth",   &azimuth);
             azimuth = fmod(azimuth + 3*TAU/2, TAU) - TAU/2;
-            ImGui::SliderAngle("elevation", &elevation, -85, 85);
-            ImGui::DragFloat("distance", &distance, 0.1, 0.1, FLT_MAX);
 
-            if (ImGui::SliderAngle("fov x", &fov_x, 5,        175))        fov_y = fov_x / ASPECT;
-            if (ImGui::SliderAngle("fov y", &fov_y, 5/ASPECT, 175/ASPECT)) fov_x = fov_y * ASPECT;
+            update_camera |= ImGui::SliderAngle("elevation", &elevation, -85, 85);
+            update_camera |= ImGui::DragFloat("distance", &distance, 0.1, 0.1, FLT_MAX);
+
+            if (ImGui::SliderAngle("fov x", &fov_x, 5,        175))        { fov_y = fov_x / ASPECT; update_camera = true; }
+            if (ImGui::SliderAngle("fov y", &fov_y, 5/ASPECT, 175/ASPECT)) { fov_x = fov_y * ASPECT; update_camera = true; }
 
             XMVECTOR camera_pos = XMVectorSet(
                 -sinf(azimuth) * cosf(elevation) * distance,
                 -cosf(azimuth) * cosf(elevation) * distance,
-                                 sinf(elevation) * distance,
+                                sinf(elevation) * distance,
                 1
             );
             raytracing_globals.camera_aspect = ASPECT;
             raytracing_globals.camera_focal_length = 1 / tanf(fov_y/2);
             XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
             raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
-            set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
         }
+
+        // frame accumulator
+        if (update_camera) raytracing_globals.accumulator_count  = 0;
+        else               raytracing_globals.accumulator_count += 1;
+        ImGui::Text("accumulated frames: %d", raytracing_globals.accumulator_count);
+
+        // upload frame constants
+        set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
 
         // RENDER
 
@@ -616,6 +643,7 @@ int WINAPI wWinMain(
         cmd_list->SetPipelineState1(raytracing_pso);
         cmd_list->DispatchRays(&dispatch_rays);
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(raytracing_render_target));
+        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(raytracing_sample_accumulator));
 
         // copy raytracing output to backbuffer
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(raytracing_render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE));
@@ -644,6 +672,6 @@ int WINAPI wWinMain(
         ID3D12CommandList* cmd_lists[] = { cmd_list };
         cmd_queue->ExecuteCommandLists(1, cmd_lists);
 
-        CHECK_RESULT(swapchain->Present(1, 0)); // vsync
+        CHECK_RESULT(swapchain->Present(VSYNC, 0));
     }
 }

@@ -5,13 +5,14 @@
 // SHADER RESOURCES
 
 GlobalRootSignature global_root_signature = {
-    "DescriptorTable(UAV(u0))," // 0: { g_render_target }
+    "DescriptorTable(UAV(u0, numDescriptors = 2))," // 0: { g_render_target, g_sample_accumulator }
     "CBV(b0)," // 1: g
     "SRV(t0)," // 2: g_scene
     "DescriptorTable(SRV(t1, numDescriptors = 2))," // 3: { g_vertices, g_indices }
 };
 
-RWTexture2D<float4> g_render_target : register(u0);
+RWTexture2D<float4> g_render_target       : register(u0);
+RWTexture2D<float4> g_sample_accumulator  : register(u1);
 
 ConstantBuffer<RaytracingGlobals> g : register(b0);
 
@@ -80,16 +81,16 @@ TriangleHitGroup hit_group = {
 [shader("raygeneration")]
 void rgen() {
     RayPayload payload;
-    payload.rng = hash(DispatchRaysIndex().xy);
+    payload.rng = hash(float3(DispatchRaysIndex().xy, g.accumulator_count));
 
     RayDesc ray;
 
-    ray.TMin = 0.0001;
-    ray.TMax = 1000;
+    ray.TMin = 0.00001;
+    ray.TMax = 10000;
 
-    const uint SAMPLES = 16;
+    const uint SAMPLES = 8;
     const uint BOUNCES = 4;
-    float3 pixel_color = 0;
+    float4 pixel_color = 0;
     for (uint sample_index = 0; sample_index < SAMPLES; sample_index++) {
         ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
 
@@ -114,10 +115,17 @@ void rgen() {
             ray.Origin   += ray.Direction * payload.t;
             ray.Direction = payload.scatter;
         }
-        pixel_color += ray_color;
+        pixel_color.rgb += clamp(ray_color, 0, 1);
     }
     pixel_color /= SAMPLES;
-    g_render_target[DispatchRaysIndex().xy] = float4(pixel_color, 1);
+    pixel_color.a = 1;
+
+    if (g.accumulator_count != 0) {
+        // TODO: prevent floating-point accumulators from growing too large
+        pixel_color += g_sample_accumulator[DispatchRaysIndex().xy];
+    }
+    g_sample_accumulator[DispatchRaysIndex().xy] = pixel_color;
+    g_render_target     [DispatchRaysIndex().xy] = pixel_color / (g.accumulator_count+1);
 }
 
 [shader("closesthit")]
@@ -141,7 +149,7 @@ void chit(inout RayPayload payload, Attributes attr) {
 
 [shader("miss")]
 void miss(inout RayPayload payload) {
-    payload.color   = 3;
+    payload.color   = 2;
     payload.scatter = 0;
     payload.t       = INFINITY;
 }

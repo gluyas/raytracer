@@ -39,6 +39,7 @@ struct Vertex {
 };
 
 struct RaytracingGlobals {
+    UINT32 accumulator_count;
     MATRIX camera_to_world;
     float  camera_aspect;
     float  camera_focal_length;
