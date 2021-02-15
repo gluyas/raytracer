@@ -91,48 +91,53 @@ void rgen() {
 
     RayDesc ray;
 
-    ray.TMin = 0.00001;
+    ray.TMin = 0.0001;
     ray.TMax = 10000;
+
+    // accumulate new samples for this frame
+    float4 accumulated_samples = 0;
 
     const uint SAMPLES = 8;
     const uint BOUNCES = 4;
-    float4 pixel_color = 0;
     for (uint sample_index = 0; sample_index < SAMPLES; sample_index++) {
         ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
 
         ray.Direction.xy  = DispatchRaysIndex().xy + 0.5;                               // pixel centers
-        // ray.Direction.xy += 0.5 * float2(random11(payload.rng), random11(payload.rng)); // random offset inside pixel
+        ray.Direction.xy += 0.5 * float2(random11(payload.rng), random11(payload.rng)); // random offset inside pixel
         ray.Direction.xy  = 2*ray.Direction.xy / DispatchRaysDimensions().xy - 1;       // normalize to clip coordinates
         ray.Direction.x  *= g.camera_aspect;
         ray.Direction.y  *= -1;
         ray.Direction.z   = -g.camera_focal_length;
         ray.Direction     = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
 
-        float3 ray_color = 1;
-        for (uint bounce_index = 0; bounce_index < BOUNCES; bounce_index++) {
+        float3 sample_color = 1;
+        for (uint bounce_index = 0; bounce_index <= BOUNCES; bounce_index++) {
             TraceRay(
                 g_scene, RAY_FLAG_NONE, 0xff,
                 0, 1, 0,
                 ray, payload
             );
-            ray_color *= payload.color;
+            sample_color *= payload.color;
 
             if (!any(payload.scatter)) {
-                pixel_color.rgb += ray_color;
+                accumulated_samples.rgb += sample_color;
                 break;
             }
             ray.Origin   += ray.Direction * payload.t;
             ray.Direction = payload.scatter;
         }
     }
-    pixel_color /= SAMPLES;
-
+    // add previous frames' samples
     if (g.accumulator_count != 0) {
         // TODO: prevent floating-point accumulators from growing too large
-        pixel_color += g_sample_accumulator[DispatchRaysIndex().xy];
+        accumulated_samples += g_sample_accumulator[DispatchRaysIndex().xy];
     }
-    g_sample_accumulator[DispatchRaysIndex().xy] = pixel_color;
-    g_render_target     [DispatchRaysIndex().xy] = pixel_color / (g.accumulator_count+1);
+
+    // calculate final pixel colour and write output values
+    // TODO: better gamma-correction
+    float4 pixel_color = sqrt(accumulated_samples / (SAMPLES * (g.accumulator_count+1)));
+    g_render_target     [DispatchRaysIndex().xy] = pixel_color;
+    g_sample_accumulator[DispatchRaysIndex().xy] = accumulated_samples;
 }
 
 TriangleHitGroup lambert_hit_group = {
@@ -161,7 +166,7 @@ void light_chit(inout RayPayload payload, Attributes attr) {
     float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
 
     payload.scatter = 0;
-    payload.color   = l.color; // TODO: directional lights
+    payload.color   = l.color * -dot(normal, WorldRayDirection());
     payload.t       = RayTCurrent();
 }
 

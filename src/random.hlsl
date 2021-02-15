@@ -38,13 +38,14 @@ uint random(inout uint seed) {
 
 // random float in the range [0.0f, 1.0f)
 float random01(inout uint seed) {
-    return asfloat(0x3f800000 | random(seed) >> 9) - 1.0;
+    return asfloat(0x3f800000 | (0x007fffff & random(seed))) - 1;
 }
 
 // random float in the range (-1.0f, 1.0f)
 float random11(inout uint seed) {
-    uint rand = random(seed);
-    return asfloat(asuint(asfloat(0x3f800000 | rand >> 9) - 1.0) | (rand & 0x80000000));
+    uint  rand   = random(seed);
+    float rand01 = asfloat(0x3f800000 | (0x007fffff & rand)) - 1;
+    return asfloat(asuint(rand01) | (rand & 0x80000000));
 }
 
 // Generate a random integer in the range [lower, upper]
@@ -57,47 +58,37 @@ float random(inout uint seed, float lower, float upper) {
     return lower + (upper - lower)*random01(seed);
 }
 
-float2 random_in_circle(inout uint seed) {
-    float2 unit;
-    float  unit2;
-    do {
-        unit.x = random11(seed);
-        unit.y = random11(seed);
-        unit2 = dot(unit, unit);
-    } while (unit2 > 1.0);
-    return unit;
-}
-
 float2 random_on_circle(inout uint seed) {
     float theta = random01(seed)*TAU;
     return float2(cos(theta), sin(theta));
 }
 
-float3 random_in_sphere(inout uint seed) {
-    float3 unit;
-    float  unit2;
-    do {
-        unit.x = random11(seed);
-        unit.y = random11(seed);
-        unit.z = random11(seed);
-        unit2 = dot(unit, unit);
-    } while (unit2 > 1.0);
-    return unit;
+float2 random_inside_circle(inout uint seed) {
+    float r = sqrt(random01(seed));
+    return r * random_on_circle(seed);
 }
 
 float3 random_on_sphere(inout uint seed) {
-    float theta1 = random01(seed)*TAU;
-    float theta2 = random01(seed)*TAU;
-    float cos1   = cos(theta1);
-    return float3(cos1*cos(theta2), cos1*sin(theta2), sin(theta1));
+    float phi       = random01(seed)*TAU;
+    float cos_theta = random11(seed);
+    float sin_theta = sqrt(1 - cos_theta*cos_theta);
+    return float3(sin_theta*cos(phi), sin_theta*sin(phi), cos_theta);
 }
 
-float3 random_in_hemisphere(inout uint seed, float3 normal) {
-    float3 unit = random_in_sphere(seed);
-    return unit - min(0.0, 2.0*dot(normal, unit))*normal;
+float3 random_inside_sphere(inout uint seed) {
+    float3 unit;
+    do {
+        unit = float3(random11(seed), random11(seed), random11(seed));
+    } while (dot(unit, unit) > 1);
+    return unit;
 }
 
 float3 random_on_hemisphere(inout uint seed, float3 normal) {
     float3 unit = random_on_sphere(seed);
+    return unit - min(0.0, 2.0*dot(normal, unit))*normal;
+}
+
+float3 random_inside_hemisphere(inout uint seed, float3 normal) {
+    float3 unit = random_inside_sphere(seed);
     return unit - min(0.0, 2.0*dot(normal, unit))*normal;
 }

@@ -331,9 +331,9 @@ int WINAPI wWinMain(
         { "data/cornell/greenwall.obj", Lambert, { 0, 1, 0 } },
         { "data/cornell/redwall.obj",   Lambert, { 1, 0, 0 } },
         { "data/cornell/largebox.obj",  Lambert, { 1, 1, 1 } },
+        { "data/cornell/smallbox.obj",  Lambert, { 1, 1, 1 } },
 
-        { "data/cornell/smallbox.obj",  Light, { 2,  2,  2  } },
-        { "data/cornell/luminaire.obj", Light, { 10, 10, 10 } },
+        { "data/cornell/luminaire.obj", Light, { 25, 25, 25 } },
     };
 
     __declspec(align(32)) struct ShaderRecord {
