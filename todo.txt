@@ -1,3 +1,5 @@
+organise global state
+
 raytracing geometry build procedures
 better handling of multiple geometries
 
