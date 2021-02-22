@@ -76,7 +76,7 @@ ID3D12Resource* g_raytracing_render_target      = NULL;
 ID3D12Resource* g_raytracing_sample_accumulator = NULL;
 
 bool g_do_update_resolution = true;
-bool g_do_update_camera = true;
+bool g_do_reset_accumulator = true;
 
 // UTILITY FUNCTIONS
 
@@ -87,7 +87,7 @@ void update_resolution() {
         g_width  = rect.right  - rect.left;
         g_height = rect.bottom - rect.top;
         g_aspect = (float) g_width / (float) g_height;
-        g_do_update_camera = true;
+        g_do_reset_accumulator = true;
     }
 
     if (!g_swapchain) {
@@ -210,7 +210,7 @@ void set_buffer_contents(ID3D12Resource* buffer, void* data, UINT64 size_in_byte
 }
 
 float clamp(float x, float a, float b) {
-    return min(max(x, b), a);
+    return fmax(fmin(x, b), a);
 }
 
 ID3D12Resource* create_upload_buffer(ID3D12Device* g_device, void* data, UINT64 size_in_bytes) {
@@ -232,19 +232,25 @@ int WINAPI wWinMain(
     int       nCmdShow
 ) {
     // PLATFORM LAYER
+    { // g_hwnd
+        WNDCLASS wc = {};
+        wc.style = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
+        wc.lpfnWndProc = WindowProc;
+        wc.lpszClassName = L"RaytracerWindowClass";
 
-    WNDCLASS wc = {};
-    wc.style         = CS_OWNDC | CS_HREDRAW | CS_VREDRAW;
-    wc.lpfnWndProc   = WindowProc;
-    wc.lpszClassName = L"RaytracerWindowClass";
+        RECT rect = {};
+        rect.right  = 1280;
+        rect.bottom = 720;
+        AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
 
-    RegisterClass(&wc);
-    g_hwnd = CreateWindow(
-        wc.lpszClassName, L"Raytracer",
-        WS_OVERLAPPEDWINDOW | WS_VISIBLE,
-        CW_USEDEFAULT, CW_USEDEFAULT, 1280, 720,
-        NULL, NULL, hInstance, NULL
-    );
+        RegisterClass(&wc);
+        g_hwnd = CreateWindow(
+            wc.lpszClassName, L"Raytracer",
+            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            CW_USEDEFAULT, CW_USEDEFAULT, rect.right-rect.left, rect.bottom-rect.top,
+            NULL, NULL, hInstance, NULL
+        );
+    }
 
     // DEVICE INTERFACE
 
@@ -405,13 +411,14 @@ int WINAPI wWinMain(
         // parse meshes into a single pair of index and vertex buffers
         Array<Vertex> vb_data = {};
         Array<Index>  ib_data = {};
+        Aabb aabb = { {NAN, NAN, NAN}, {NAN, NAN, NAN} };
         for (int i = 0; i < _countof(scene_objects); i++) {
             // record offset into the ib array - combine with virtual address after geometry upload
             Index ib_offset = ib_data.len;
             geometry_descs[i].Triangles.IndexBuffer = ib_offset * sizeof(Index);
 
             // append mesh data to shared ib and vb
-            parse_obj_file(scene_objects[i].filename, &vb_data, &ib_data);
+            parse_obj_file(scene_objects[i].filename, &vb_data, &ib_data, &aabb);
 
             // record number of indices
             geometry_descs[i].Triangles.IndexCount  = ib_data.len - ib_offset;
@@ -513,7 +520,7 @@ int WINAPI wWinMain(
         auto buffer_desc       = CD3DX12_RESOURCE_DESC::Buffer(0, D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS);
 
         // scratch buffer
-        buffer_desc.Width = max(blas_prebuild.ScratchDataSizeInBytes, tlas_prebuild.ScratchDataSizeInBytes);
+        buffer_desc.Width = fmax(blas_prebuild.ScratchDataSizeInBytes, tlas_prebuild.ScratchDataSizeInBytes);
         ID3D12Resource* scratch_buffer = NULL;
         CHECK_RESULT(g_device->CreateCommittedResource(
             &buffer_properties, D3D12_HEAP_FLAG_NONE,
@@ -538,13 +545,24 @@ int WINAPI wWinMain(
 
         // tlas instance descs
         ID3D12Resource* instance_descs_buffer = NULL; {
+            XMFLOAT3 w = {
+                aabb.max.x-aabb.min.x,
+                aabb.max.y-aabb.min.y,
+                aabb.max.z-aabb.min.z,
+            };
+            float scale = 0;
+            scale = fmax(w.x, scale);
+            scale = fmax(w.y, scale);
+            scale = fmax(w.z, scale);
+            scale = 1/scale;
+
             D3D12_RAYTRACING_INSTANCE_DESC instance_desc = {};
-            instance_desc.Transform[0][0] =-0.001;
-            instance_desc.Transform[1][2] = 0.001;
-            instance_desc.Transform[2][1] = 0.001;
-            instance_desc.Transform[0][3] = 0.27;
-            instance_desc.Transform[1][3] =-0.27;
-            instance_desc.Transform[2][3] =-0.23;
+            instance_desc.Transform[0][0] =-scale;
+            instance_desc.Transform[1][2] = scale;
+            instance_desc.Transform[2][1] = scale;
+            instance_desc.Transform[0][3] = scale*(aabb.min.x + w.x*0.5);
+            instance_desc.Transform[2][3] =-scale*(aabb.min.y + w.y*0.5);
+            instance_desc.Transform[1][3] =-scale*(aabb.min.z + w.z*0.5);
             instance_desc.InstanceMask = 1;
             instance_desc.AccelerationStructure = blas_buffer->GetGPUVirtualAddress();
 
@@ -588,12 +606,22 @@ int WINAPI wWinMain(
     }
 
     RaytracingGlobals raytracing_globals = {};
+    raytracing_globals.samples_per_pixel  = 8;
+    raytracing_globals.bounces_per_sample = 4;
     ID3D12Resource*   raytracing_globals_buffer = create_upload_buffer(g_device, NULL, sizeof(raytracing_globals));
 
     // MAIN LOOP
 
     while (true) {
         // SETUP
+
+        // event handler
+        MSG msg = {};
+        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
+            if (msg.message == WM_QUIT) return 0;
+            TranslateMessage(&msg);
+            DispatchMessage(&msg);
+        }
 
         // synchronize with g_device
         // TODO: pipeline frames
@@ -607,20 +635,27 @@ int WINAPI wWinMain(
         if (g_do_update_resolution) update_resolution();
         g_do_update_resolution = false;
 
+        // poll mouse input
+        XMFLOAT2 mouse_drag = {};
+        float    mouse_scroll = 0;
+        if (!io.WantCaptureMouse) {
+            if (ImGui::IsMouseDragging(0)) {
+                mouse_drag.x = (float) io.MouseDelta.x / (float) g_width;
+                mouse_drag.y =-(float) io.MouseDelta.y / (float) g_width;
+                g_do_reset_accumulator = true;
+            }
+            if (io.MouseWheel) {
+                mouse_scroll = io.MouseWheel;
+                g_do_reset_accumulator = true;
+            };
+        }
+
         // start imgui frame
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         // static bool show_demo_window = true; if (show_demo_window) ImGui::ShowDemoWindow(&show_demo_window);
         ImGui::Begin("debug menu");
-
-        // event handler
-        MSG msg = {};
-        while (PeekMessage(&msg, NULL, 0, 0, PM_REMOVE)) {
-            if (msg.message == WM_QUIT) return 0;
-            TranslateMessage(&msg);
-            DispatchMessage(&msg);
-        }
 
         // UPDATE
 
@@ -629,18 +664,24 @@ int WINAPI wWinMain(
 
             static float azimuth   = 0;
             static float elevation = 0;
-            static float distance  = 1;
-            static float fov_x     = TAU/4;
+            static float distance  = 2.5;
+            static float fov_x     = TAU/6;
             static float fov_y     = fov_x / g_aspect;
 
-            g_do_update_camera |= ImGui::SliderAngle("azimuth",   &azimuth);
+            g_do_reset_accumulator |= ImGui::SliderAngle("azimuth",   &azimuth);
+            azimuth += mouse_drag.x * TAU/2;
             azimuth = fmod(azimuth + 3*TAU/2, TAU) - TAU/2;
 
-            g_do_update_camera |= ImGui::SliderAngle("elevation", &elevation, -85, 85);
-            g_do_update_camera |= ImGui::DragFloat("distance", &distance, 0.1, 0.1, FLT_MAX);
+            g_do_reset_accumulator |= ImGui::SliderAngle("elevation", &elevation, -85, 85);
+            elevation -= mouse_drag.y * TAU/2;
+            elevation = clamp(elevation, -85*DEGREES, 85*DEGREES);
 
-            if (ImGui::SliderAngle("fov x", &fov_x, 5,          175))          { fov_y = fov_x / g_aspect; g_do_update_camera = true; }
-            if (ImGui::SliderAngle("fov y", &fov_y, 5/g_aspect, 175/g_aspect)) { fov_x = fov_y * g_aspect; g_do_update_camera = true; }
+            g_do_reset_accumulator |= ImGui::DragFloat("distance", &distance, distance*0.005, 0.001, FLT_MAX);
+            distance -= mouse_scroll*distance*0.05;
+            distance = clamp(distance, 0.005, INFINITY);
+
+            if (ImGui::SliderAngle("fov x", &fov_x, 5,          175))          { fov_y = fov_x / g_aspect; g_do_reset_accumulator = true; }
+            if (ImGui::SliderAngle("fov y", &fov_y, 5/g_aspect, 175/g_aspect)) { fov_x = fov_y * g_aspect; g_do_reset_accumulator = true; }
 
             XMVECTOR camera_pos = XMVectorSet(
                 -sinf(azimuth) * cosf(elevation) * distance,
@@ -654,14 +695,21 @@ int WINAPI wWinMain(
             raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
         }
 
+        { // render settings
+            ImGui::Text("renderer");
+            g_do_reset_accumulator |= ImGui::SliderInt("samples", (int*) &raytracing_globals.samples_per_pixel,  1, 32);
+            g_do_reset_accumulator |= ImGui::SliderInt("bounces", (int*) &raytracing_globals.bounces_per_sample, 1, 16);
+        }
+
         // frame accumulator
-        if (g_do_update_camera) raytracing_globals.accumulator_count  = 0;
-        else                    raytracing_globals.accumulator_count += 1;
-        g_do_update_camera = 0;
-        ImGui::Text("accumulated frames: %d", raytracing_globals.accumulator_count);
+        if (g_do_reset_accumulator) raytracing_globals.accumulator_count  = 0;
+        g_do_reset_accumulator = false;
 
         // upload frame constants
         set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
+
+        raytracing_globals.accumulator_count += raytracing_globals.samples_per_pixel;
+        ImGui::Text("accumulated samples: %d", raytracing_globals.accumulator_count);
 
         // RENDER
 

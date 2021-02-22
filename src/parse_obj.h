@@ -3,4 +3,4 @@
 #include "types.h"
 #include "array.h"
 
-void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>* indices);
+void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb = NULL);

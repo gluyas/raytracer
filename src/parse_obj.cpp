@@ -35,7 +35,7 @@ end:
     return i;
 }
 
-void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>* indices) {
+void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb) {
     FILE* file = fopen(filename, "rb");
 
     const UINT64 char_buf_len = 512;
@@ -63,6 +63,14 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
                 // position
                 XMFLOAT3 v;
                 assert(parse_floats(&substr, 3, (float*) &v) == 3);
+                if (aabb) {
+                    aabb->min.x = fmin(v.x, aabb->min.x);
+                    aabb->max.x = fmax(v.x, aabb->max.x);
+                    aabb->min.y = fmin(v.y, aabb->min.y);
+                    aabb->max.y = fmax(v.y, aabb->max.y);
+                    aabb->min.z = fmin(v.z, aabb->min.z);
+                    aabb->max.z = fmax(v.z, aabb->max.z);
+                }
                 array_push(&vs, v);
             } else if (substr[1] == 't' && isspace(substr[2])) {
                 substr += 2;

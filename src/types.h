@@ -2,6 +2,7 @@
 
 #define TAU  6.28318530717958647692528676655900577
 #define TAUf 6.28318530717958647692528676655900577f
+#define DEGREES (TAU / 360)
 
 #ifdef HLSL
 
@@ -33,6 +34,11 @@ typedef UINT16 Index;
 
 // SHARED TYPEDEFS
 
+struct Aabb {
+    FLOAT3 min;
+    FLOAT3 max;
+};
+
 struct Vertex {
     FLOAT3 position;
     FLOAT3 normal;
@@ -43,6 +49,8 @@ struct RaytracingGlobals {
     MATRIX camera_to_world;
     float  camera_aspect;
     float  camera_focal_length;
+    UINT32 samples_per_pixel;
+    UINT32 bounces_per_sample;
 };
 
 struct RaytracingLocals {
