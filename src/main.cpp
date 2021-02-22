@@ -1,4 +1,5 @@
 #include <stdlib.h>
+#include <time.h>
 
 #include <windows.h>
 
@@ -21,6 +22,9 @@
 #include "imgui_impl_dx12.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+#define STB_IMAGE_WRITE_IMPLEMENTATION
+#include "stb_image_write.h"
+
 #include "types.h"
 using namespace DirectX;
 
@@ -33,6 +37,14 @@ using namespace DirectX;
 // TODO: nicer error handling
 #define CHECK_RESULT(hresult) if ((hresult) != S_OK) abort()
 #define SET_NAME(object) CHECK_RESULT(object->SetName(L#object))
+
+#define SCENE_NAME "cornell"
+
+#define WINDOW_STYLE_EX WS_EX_OVERLAPPEDWINDOW
+#define WINDOW_STYLE (WS_OVERLAPPEDWINDOW | WS_VISIBLE)
+#define WINDOW_MENU 0
+
+#define MIN_RESOLUTION 256
 
 #define VSYNC 0
 #define PIXEL_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
@@ -77,6 +89,7 @@ ID3D12Resource* g_raytracing_sample_accumulator = NULL;
 
 bool g_do_update_resolution = true;
 bool g_do_reset_accumulator = true;
+UINT g_prevent_resizing = 0;
 
 // UTILITY FUNCTIONS
 
@@ -84,8 +97,8 @@ void update_resolution() {
     { // get client area
         RECT rect;
         GetClientRect(g_hwnd, &rect);
-        g_width  = rect.right  - rect.left;
-        g_height = rect.bottom - rect.top;
+        g_width  = rect.right;
+        g_height = rect.bottom;
         g_aspect = (float) g_width / (float) g_height;
         g_do_reset_accumulator = true;
     }
@@ -135,7 +148,6 @@ void update_resolution() {
         D3D12_RESOURCE_DESC resource_desc = {};
         resource_desc.Dimension          = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
         resource_desc.Format             = PIXEL_FORMAT;
-        // HACK: get actual width / height values
         resource_desc.Width              = g_width;
         resource_desc.Height             = g_height;
         resource_desc.DepthOrArraySize   = 1;
@@ -192,6 +204,17 @@ LRESULT CALLBACK WindowProc(
             return 0;
         } break;
 
+        case WM_GETMINMAXINFO: {
+            RECT rect = {};
+            rect.right  = MIN_RESOLUTION;
+            rect.bottom = MIN_RESOLUTION;
+            AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
+
+            LPMINMAXINFO info = (LPMINMAXINFO) lp;
+            info->ptMinTrackSize.x = rect.right;
+            info->ptMinTrackSize.y = rect.bottom;
+        }
+
         default: {
             return DefWindowProc(g_hwnd, msg, wp, lp);
         } break;
@@ -211,6 +234,15 @@ void set_buffer_contents(ID3D12Resource* buffer, void* data, UINT64 size_in_byte
 
 float clamp(float x, float a, float b) {
     return fmax(fmin(x, b), a);
+}
+
+UINT64 round_up(UINT64 x, UINT64 d) {
+    if (x) return (1 + (x - 1) / d) * d;
+    else   return d;
+}
+
+UINT64 ensure_unsigned(UINT64 x) {
+    return static_cast<UINT64>(max(static_cast<INT64>(x), 0));
 }
 
 ID3D12Resource* create_upload_buffer(ID3D12Device* g_device, void* data, UINT64 size_in_bytes) {
@@ -239,16 +271,17 @@ int WINAPI wWinMain(
         wc.lpszClassName = L"RaytracerWindowClass";
 
         RECT rect = {};
-        rect.right  = 1280;
-        rect.bottom = 720;
-        AdjustWindowRect(&rect, WS_OVERLAPPEDWINDOW, false);
+        rect.right  = 1600;
+        rect.bottom = 900;
+        AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
 
         RegisterClass(&wc);
-        g_hwnd = CreateWindow(
+        g_hwnd = CreateWindowExW(
+            WINDOW_STYLE_EX,
             wc.lpszClassName, L"Raytracer",
-            WS_OVERLAPPEDWINDOW | WS_VISIBLE,
+            WINDOW_STYLE,
             CW_USEDEFAULT, CW_USEDEFAULT, rect.right-rect.left, rect.bottom-rect.top,
-            NULL, NULL, hInstance, NULL
+            NULL, WINDOW_MENU, hInstance, NULL
         );
     }
 
@@ -391,7 +424,7 @@ int WINAPI wWinMain(
         { "data/cornell/largebox.obj",  Lambert, { 1, 1, 1 } },
         { "data/cornell/smallbox.obj",  Lambert, { 1, 1, 1 } },
 
-        { "data/cornell/luminaire.obj", Light, { 25, 25, 25 } },
+        { "data/cornell/luminaire.obj", Light, { 50, 50, 50 } },
     };
 
     __declspec(align(32)) struct ShaderRecord {
@@ -606,7 +639,7 @@ int WINAPI wWinMain(
     }
 
     RaytracingGlobals raytracing_globals = {};
-    raytracing_globals.samples_per_pixel  = 8;
+    raytracing_globals.samples_per_pixel  = 16;
     raytracing_globals.bounces_per_sample = 4;
     ID3D12Resource*   raytracing_globals_buffer = create_upload_buffer(g_device, NULL, sizeof(raytracing_globals));
 
@@ -632,8 +665,10 @@ int WINAPI wWinMain(
             WaitForSingleObject(g_fence_event, INFINITE);
         }
 
-        if (g_do_update_resolution) update_resolution();
-        g_do_update_resolution = false;
+        if (g_do_update_resolution && !g_prevent_resizing) {
+            g_do_update_resolution = false;
+            update_resolution();
+        }
 
         // poll mouse input
         XMFLOAT2 mouse_drag = {};
@@ -664,8 +699,8 @@ int WINAPI wWinMain(
 
             static float azimuth   = 0;
             static float elevation = 0;
-            static float distance  = 2.5;
-            static float fov_x     = TAU/6;
+            static float distance  = 2;
+            static float fov_x     = 70*DEGREES;
             static float fov_y     = fov_x / g_aspect;
 
             g_do_reset_accumulator |= ImGui::SliderAngle("azimuth",   &azimuth);
@@ -697,8 +732,24 @@ int WINAPI wWinMain(
 
         { // render settings
             ImGui::Text("renderer");
-            g_do_reset_accumulator |= ImGui::SliderInt("samples", (int*) &raytracing_globals.samples_per_pixel,  1, 32);
-            g_do_reset_accumulator |= ImGui::SliderInt("bounces", (int*) &raytracing_globals.bounces_per_sample, 1, 16);
+
+            int set_resolution[2] = { (int) g_width, (int) g_height };
+            if (ImGui::InputInt2("resolution", set_resolution, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                g_do_reset_accumulator = true;
+
+                set_resolution[0] = max(set_resolution[0], 256);
+                set_resolution[1] = max(set_resolution[1], 256);
+
+                RECT rect;
+                GetWindowRect(g_hwnd, &rect);
+                rect.right  = rect.left + set_resolution[0];
+                rect.bottom = rect.top  + set_resolution[1];
+                AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
+                MoveWindow(g_hwnd, rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top, true);
+            }
+
+            g_do_reset_accumulator |= ImGui::SliderInt("samples##render", (int*) &raytracing_globals.samples_per_pixel,  1, 64, "%d", ImGuiSliderFlags_AlwaysClamp);
+            g_do_reset_accumulator |= ImGui::SliderInt("bounces##render", (int*) &raytracing_globals.bounces_per_sample, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp);
         }
 
         // frame accumulator
@@ -707,9 +758,7 @@ int WINAPI wWinMain(
 
         // upload frame constants
         set_buffer_contents(raytracing_globals_buffer, &raytracing_globals, sizeof(raytracing_globals));
-
         raytracing_globals.accumulator_count += raytracing_globals.samples_per_pixel;
-        ImGui::Text("accumulated samples: %d", raytracing_globals.accumulator_count);
 
         // RENDER
 
@@ -763,6 +812,96 @@ int WINAPI wWinMain(
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST));
 
         cmd_list->CopyResource(g_rtvs[frame_index], g_raytracing_render_target);
+
+        { // image capture
+            ImGui::Text("image capture");
+            static bool do_capture = false;
+            static UINT capture_samples = 1024 * raytracing_globals.samples_per_pixel;
+            static ID3D12Resource* capture_readback_buffer = NULL;
+            static UINT            capture_readback_buffer_pitch;
+
+            if (do_capture && raytracing_globals.accumulator_count == capture_samples) {
+                // create readback buffer and add copy instructions to cmd_list
+                do_capture = false;
+                g_prevent_resizing += 1;
+
+                capture_readback_buffer_pitch = round_up(g_width*4, D3D12_DEFAULT_RESOURCE_PLACEMENT_ALIGNMENT);
+
+                D3D12_RESOURCE_DESC resource_desc = {};
+                resource_desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
+                resource_desc.Format             = DXGI_FORMAT_UNKNOWN;
+                resource_desc.Width              = capture_readback_buffer_pitch*g_height;
+                resource_desc.Height             = 1;
+                resource_desc.DepthOrArraySize   = 1;
+                resource_desc.MipLevels          = 1;
+                resource_desc.SampleDesc.Count   = 1;
+                resource_desc.SampleDesc.Quality = 0;
+                resource_desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
+                resource_desc.Flags              = D3D12_RESOURCE_FLAG_NONE;
+
+                CHECK_RESULT(g_device->CreateCommittedResource(
+                    &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_READBACK), D3D12_HEAP_FLAG_NONE,
+                    &resource_desc, D3D12_RESOURCE_STATE_COPY_DEST,
+                    NULL,
+                    IID_PPV_ARGS(&capture_readback_buffer)
+                ));
+                SET_NAME(capture_readback_buffer);
+
+                D3D12_TEXTURE_COPY_LOCATION dst = {};
+                dst.pResource = capture_readback_buffer;
+                dst.Type      = D3D12_TEXTURE_COPY_TYPE_PLACED_FOOTPRINT;
+                dst.PlacedFootprint.Offset             = 0;
+                dst.PlacedFootprint.Footprint.Format   = PIXEL_FORMAT;
+                dst.PlacedFootprint.Footprint.Width    = g_width;
+                dst.PlacedFootprint.Footprint.Height   = g_height;
+                dst.PlacedFootprint.Footprint.Depth    = 1;
+                dst.PlacedFootprint.Footprint.RowPitch = capture_readback_buffer_pitch;
+
+                D3D12_TEXTURE_COPY_LOCATION src = {};
+                src.pResource = g_raytracing_render_target;
+                src.Type      = D3D12_TEXTURE_COPY_TYPE_SUBRESOURCE_INDEX;
+                src.SubresourceIndex = 0;
+
+                cmd_list->CopyTextureRegion(
+                    &dst, 0, 0, 0,
+                    &src, NULL
+                );
+                // wait until next frame for copy to complete
+            } else if (capture_readback_buffer) {
+                // write file from readback buffer and release it
+                static_assert(PIXEL_FORMAT == DXGI_FORMAT_R8G8B8A8_UNORM, "");
+
+                void* data_ptr;
+                CHECK_RESULT(capture_readback_buffer->Map(0, NULL, &data_ptr));
+
+                // write image file
+                char timestamp[32] = {};
+                const time_t now = time(NULL);
+                strftime(timestamp, 32, "%Y_%m_%d_%H_%M_%S", gmtime(&now));
+                char filename[128] = {};
+                sprintf(filename, "captures/%s_%s.%dx%d.s%d.b%d.png", SCENE_NAME, timestamp, g_width, g_height, capture_samples, raytracing_globals.bounces_per_sample);
+                stbi_write_png(filename, g_width, g_height, 4, data_ptr, capture_readback_buffer_pitch);
+
+                capture_readback_buffer->Unmap(0, &CD3DX12_RANGE(0, 0));
+                capture_readback_buffer->Release();
+                capture_readback_buffer = NULL;
+
+                g_prevent_resizing -= 1;
+            }
+
+            bool capture_updated = false;
+            capture_updated |= ImGui::SliderInt("samples##capture", (int*) &capture_samples, raytracing_globals.samples_per_pixel, 32768, "%d", ImGuiSliderFlags_AlwaysClamp);
+            capture_samples = round_up(ensure_unsigned(capture_samples), raytracing_globals.samples_per_pixel);
+
+            capture_updated |= ImGui::Checkbox("capture", &do_capture);
+
+            if (capture_updated && do_capture && raytracing_globals.accumulator_count > capture_samples) {
+                // reset accumulator if capture is set after specified samples has already been reached
+                g_do_reset_accumulator = true;
+            }
+
+            ImGui::Text("accumulated samples: %d", raytracing_globals.accumulator_count);
+        }
 
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_raytracing_render_target, D3D12_RESOURCE_STATE_COPY_SOURCE, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
 

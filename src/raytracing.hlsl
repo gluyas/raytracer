@@ -95,7 +95,7 @@ void rgen() {
     ray.TMax = 10000;
 
     // accumulate new samples for this frame
-    float4 accumulated_samples = 0;
+    float4 accumulated_samples = float4(0, 0, 0, g.samples_per_pixel);
 
     for (uint sample_index = 0; sample_index < g.samples_per_pixel; sample_index++) {
         ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
@@ -119,6 +119,10 @@ void rgen() {
 
             if (!any(payload.scatter)) {
                 accumulated_samples.rgb += sample_color;
+                if (bounce_index == 0 && isinf(payload.t)) {
+                    // subtract from alpha channel if primary ray misses geometry
+                    accumulated_samples.a -= 1;
+                }
                 break;
             }
             ray.Origin   += ray.Direction * payload.t;
