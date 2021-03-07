@@ -45,12 +45,19 @@ struct Vertex {
 };
 
 struct RaytracingGlobals {
+    UINT32 samples_per_pixel;
+    UINT32 bounces_per_sample;
     UINT32 accumulator_count;
+
     MATRIX camera_to_world;
     float  camera_aspect;
     float  camera_focal_length;
-    UINT32 samples_per_pixel;
-    UINT32 bounces_per_sample;
+
+    // TODO: move shader specific parameters into hit groups
+    float debug_roughness;
+    float debug_f0;
+    float debug_rs;
+    float debug_rl;
 };
 
 struct RaytracingLocals {

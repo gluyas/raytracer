@@ -38,7 +38,7 @@ using namespace DirectX;
 #define CHECK_RESULT(hresult) if ((hresult) != S_OK) abort()
 #define SET_NAME(object) CHECK_RESULT(object->SetName(L#object))
 
-#define SCENE_NAME "cornell"
+#define SCENE_NAME "cook_torrance_test"
 
 #define WINDOW_STYLE_EX WS_EX_OVERLAPPEDWINDOW
 #define WINDOW_STYLE (WS_OVERLAPPEDWINDOW | WS_VISIBLE)
@@ -397,14 +397,16 @@ int WINAPI wWinMain(
 
     enum Material {
         Lambert,
+        CookTorrance,
         Light,
 
         Count,
     };
 
     void* material_hit_group_identifiers[Material::Count] = {}; {
-        material_hit_group_identifiers[Lambert] = raytracing_properties->GetShaderIdentifier(L"lambert_hit_group");
-        material_hit_group_identifiers[Light]   = raytracing_properties->GetShaderIdentifier(L"light_hit_group");
+        material_hit_group_identifiers[Lambert]    = raytracing_properties->GetShaderIdentifier(L"lambert_hit_group");
+        material_hit_group_identifiers[CookTorrance] = raytracing_properties->GetShaderIdentifier(L"cook_torrance_hit_group");
+        material_hit_group_identifiers[Light]      = raytracing_properties->GetShaderIdentifier(L"light_hit_group");
     }
 
     struct GeometryInstance {
@@ -421,8 +423,9 @@ int WINAPI wWinMain(
         { "data/cornell/ceiling.obj",   Lambert, { 1, 1, 1 } },
         { "data/cornell/greenwall.obj", Lambert, { 0, 1, 0 } },
         { "data/cornell/redwall.obj",   Lambert, { 1, 0, 0 } },
-        { "data/cornell/largebox.obj",  Lambert, { 1, 1, 1 } },
-        { "data/cornell/smallbox.obj",  Lambert, { 1, 1, 1 } },
+
+        { "data/cornell/largebox.obj",  CookTorrance, { 0.8, 0.8, 0.8 } },
+        { "data/cornell/smallbox.obj",  CookTorrance, { 0.8, 0.8, 0.8 } },
 
         { "data/cornell/luminaire.obj", Light, { 50, 50, 50 } },
     };
@@ -641,6 +644,12 @@ int WINAPI wWinMain(
     RaytracingGlobals raytracing_globals = {};
     raytracing_globals.samples_per_pixel  = 16;
     raytracing_globals.bounces_per_sample = 4;
+
+raytracing_globals.debug_f0 = 0.2;
+raytracing_globals.debug_rl = 0.5;
+raytracing_globals.debug_rs = 0.5;
+raytracing_globals.debug_roughness = 0.5;
+
     ID3D12Resource*   raytracing_globals_buffer = create_upload_buffer(g_device, NULL, sizeof(raytracing_globals));
 
     // MAIN LOOP
@@ -685,12 +694,19 @@ int WINAPI wWinMain(
             };
         }
 
+
         // start imgui frame
         ImGui_ImplDX12_NewFrame();
         ImGui_ImplWin32_NewFrame();
         ImGui::NewFrame();
         // static bool show_demo_window = true; if (show_demo_window) ImGui::ShowDemoWindow(&show_demo_window);
         ImGui::Begin("debug menu");
+
+        ImGui::Text("material");
+        g_do_reset_accumulator |= ImGui::SliderFloat("roughness", &raytracing_globals.debug_roughness, 0, 1);
+        g_do_reset_accumulator |= ImGui::SliderFloat("f0", &raytracing_globals.debug_f0, 0, 1);
+        g_do_reset_accumulator |= ImGui::SliderFloat("specular", &raytracing_globals.debug_rs, 0, 1);
+        g_do_reset_accumulator |= ImGui::SliderFloat("lambert", &raytracing_globals.debug_rl, 0, 1);
 
         // UPDATE
 
