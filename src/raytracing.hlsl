@@ -68,13 +68,14 @@ struct RayPayload {
     uint   rng;
     float  t;
     float3 scatter;
-    float3 color;
+    float3 reflectance;
+    float3 emission;
 };
 
 typedef BuiltInTriangleIntersectionAttributes Attributes;
 
 RaytracingShaderConfig shader_config = {
-    32, // max payload size
+    44, // max payload size
     8   // max attribute size
 };
 
@@ -90,7 +91,6 @@ void rgen() {
     payload.rng = hash(float3(DispatchRaysIndex().xy, g.accumulator_count));
 
     RayDesc ray;
-
     ray.TMin = 0.0001;
     ray.TMax = 10000;
 
@@ -98,6 +98,7 @@ void rgen() {
     float4 accumulated_samples = float4(0, 0, 0, g.samples_per_pixel);
 
     for (uint sample_index = 0; sample_index < g.samples_per_pixel; sample_index++) {
+        // generate camera ray
         ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
 
         ray.Direction.xy  = DispatchRaysIndex().xy + 0.5;                               // pixel centers
@@ -108,24 +109,29 @@ void rgen() {
         ray.Direction.z   = -g.camera_focal_length;
         ray.Direction     = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
 
-        float3 sample_color = 1;
+        // per-sample integrals
+        // these will be accumulated along the light path with each bounce
+        float3 radiance    = 0;
+        float3 reflectance = 1;
         for (uint bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
             TraceRay(
                 g_scene, RAY_FLAG_NONE, 0xff,
                 0, 1, 0,
                 ray, payload
             );
-            sample_color *= payload.color;
+            radiance    += payload.emission * reflectance;
+            reflectance *= payload.reflectance;
 
-            if (!any(payload.scatter)) {
-                accumulated_samples.rgb += sample_color;
-                if (bounce_index == 0 && isinf(payload.t)) {
-                    // subtract from alpha channel if primary ray misses geometry
+            if (!any(payload.reflectance)) {
+                accumulated_samples.rgb += radiance;
+                if (bounce_index == 0) {
+                    // subtract opacity if sample completely misses scene geometry
                     accumulated_samples.a -= 1;
                 }
                 break;
             }
-            ray.Origin   += ray.Direction * payload.t;
+
+            ray.Origin   += payload.t * ray.Direction;
             ray.Direction = payload.scatter;
         }
     }
@@ -152,9 +158,10 @@ void lambert_chit(inout RayPayload payload, Attributes attr) {
     uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
     float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
 
-    payload.scatter = random_on_hemisphere(payload.rng, normal);
-    payload.color   = l.color * dot(normal, payload.scatter);
-    payload.t       = RayTCurrent();
+    payload.scatter     = random_on_hemisphere(payload.rng, normal);
+    payload.reflectance = l.color * dot(normal, payload.scatter);
+    payload.emission    = 0;
+    payload.t           = RayTCurrent();
 }
 
 TriangleHitGroup light_hit_group = {
@@ -167,14 +174,16 @@ void light_chit(inout RayPayload payload, Attributes attr) {
     uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
     float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
 
-    payload.scatter = 0;
-    payload.color   = l.color * -dot(normal, WorldRayDirection());
+    payload.scatter     = 0;
+    payload.reflectance = 0;
+    payload.emission    = l.color * -dot(normal, WorldRayDirection());
     payload.t       = RayTCurrent();
 }
 
 [shader("miss")]
 void miss(inout RayPayload payload) {
-    payload.color   = 0;
-    payload.scatter = 0;
-    payload.t       = INFINITY;
+    payload.scatter     = 0;
+    payload.reflectance = 0;
+    payload.emission    = 0;
+    payload.t           = INFINITY;
 }
