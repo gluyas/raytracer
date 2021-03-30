@@ -5,7 +5,7 @@
 // SHADER RESOURCES
 
 GlobalRootSignature global_root_signature = {
-    "DescriptorTable(UAV(u0, numDescriptors = 2))," // 0: { g_render_target, g_sample_accumulator }
+    "DescriptorTable(UAV(u0, numDescriptors = 3))," // 0: { g_render_target, g_sample_accumulator, g_translucent_samples_buffer }
     "CBV(b0)," // 1: g
     "SRV(t0)," // 2: g_scene
     "DescriptorTable(SRV(t1, numDescriptors = 2))," // 3: { g_vertices, g_indices }
@@ -13,6 +13,9 @@ GlobalRootSignature global_root_signature = {
 
 RWTexture2D<float4> g_render_target       : register(u0);
 RWTexture2D<float4> g_sample_accumulator  : register(u1);
+
+// TODO: optimized data structure
+RWStructuredBuffer<SamplePoint> g_translucent_samples_buffer : register(u2);
 
 ConstantBuffer<RaytracingGlobals> g : register(b0);
 
@@ -85,55 +88,61 @@ RaytracingPipelineConfig pipeline_config = {
 
 // SHADER CODE
 
-[shader("raygeneration")]
-void rgen() {
+float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
+    float4 result = 0;
+
     RayPayload payload;
-    payload.rng = hash(float3(DispatchRaysIndex().xy, g.accumulator_count));
+    payload.rng = rng;
+
+    float3 radiance    = 0;
+    float3 reflectance = 1;
+    for (uint bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
+        TraceRay(
+            g_scene, RAY_FLAG_NONE, 0xff,
+            0, 1, 0,
+            ray, payload
+        );
+        radiance    += payload.emission * reflectance;
+        reflectance *= payload.reflectance;
+
+        if (!any(payload.reflectance)) {
+            result.rgb = radiance;
+            result.a   = bounce_index == 0 ? 0 : 1;
+            break;
+        }
+
+        ray.Origin   += payload.t * ray.Direction;
+        ray.Direction = payload.scatter;
+    }
+
+    rng = payload.rng; // write rng back out
+    return result;
+}
+
+[shader("raygeneration")]
+void camera_rgen() {
+    uint rng = hash(float3(DispatchRaysIndex().xy, g.frame_rng*(g.accumulator_count != 0)));
 
     RayDesc ray;
     ray.TMin = 0.0001;
     ray.TMax = 10000;
 
     // accumulate new samples for this frame
-    float4 accumulated_samples = float4(0, 0, 0, g.samples_per_pixel);
+    float4 accumulated_samples = 0;
 
     for (uint sample_index = 0; sample_index < g.samples_per_pixel; sample_index++) {
         // generate camera ray
         ray.Origin = g.camera_to_world[3].xyz / g.camera_to_world[3].w;
 
         ray.Direction.xy  = DispatchRaysIndex().xy + 0.5;                               // pixel centers
-        ray.Direction.xy += 0.5 * float2(random11(payload.rng), random11(payload.rng)); // random offset inside pixel
+        ray.Direction.xy += 0.5 * float2(random11(rng), random11(rng)); // random offset inside pixel
         ray.Direction.xy  = 2*ray.Direction.xy / DispatchRaysDimensions().xy - 1;       // normalize to clip coordinates
         ray.Direction.x  *= g.camera_aspect;
         ray.Direction.y  *= -1;
         ray.Direction.z   = -g.camera_focal_length;
         ray.Direction     = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
 
-        // per-sample integrals
-        // these will be accumulated along the light path with each bounce
-        float3 radiance    = 0;
-        float3 reflectance = 1;
-        for (uint bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
-            TraceRay(
-                g_scene, RAY_FLAG_NONE, 0xff,
-                0, 1, 0,
-                ray, payload
-            );
-            radiance    += payload.emission * reflectance;
-            reflectance *= payload.reflectance;
-
-            if (!any(payload.reflectance)) {
-                accumulated_samples.rgb += radiance;
-                if (bounce_index == 0) {
-                    // subtract opacity if sample completely misses scene geometry
-                    accumulated_samples.a -= 1;
-                }
-                break;
-            }
-
-            ray.Origin   += payload.t * ray.Direction;
-            ray.Direction = payload.scatter;
-        }
+        accumulated_samples += trace_path_sample(rng, ray);
     }
     // add previous frames' samples
     if (g.accumulator_count != 0) {
@@ -186,4 +195,65 @@ void miss(inout RayPayload payload) {
     payload.reflectance = 0;
     payload.emission    = 0;
     payload.t           = INFINITY;
+}
+
+// translucent materials
+
+[shader("raygeneration")]
+void translucent_rgen() {
+    uint rng = hash(float3(DispatchRaysIndex().xy, g.accumulator_count));
+
+    SamplePoint sample_point = g_translucent_samples_buffer[DispatchRaysIndex().x];
+
+    RayDesc ray;
+    ray.TMin = 0.0001;
+    ray.TMax = 10000;
+
+    // point normal is packed into irradiance field for initialization
+    float3 normal           = sample_point.irradiance;
+    sample_point.irradiance = 0;
+
+    for (uint sample_index = 0; sample_index < g.samples_per_pixel; sample_index++) {
+        ray.Origin    = sample_point.position;
+        ray.Direction = random_on_hemisphere(rng, normal);
+        sample_point.irradiance += trace_path_sample(rng, ray).rgb;
+    }
+    sample_point.irradiance /= g.samples_per_pixel;
+
+    g_translucent_samples_buffer[DispatchRaysIndex().x] = sample_point;
+}
+
+TriangleHitGroup translucent_hit_group = {
+    "",
+    "translucent_chit"
+};
+
+[shader("closesthit")]
+void translucent_chit(inout RayPayload payload, Attributes attr) {
+    if (!g.translucent_samples_count) {
+        // translucent_samples_count set to 0 for initialization
+        payload.scatter     = 0;
+        payload.reflectance = 0;
+        payload.emission    = 0;
+        payload.t           = RayTCurrent();
+        return;
+    }
+
+    float3 hit     = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
+    float  nearest = INFINITY;
+    float3 color   = 0;
+    for (int i = 0; i < g.translucent_samples_count; i++) {
+        SamplePoint sample_point = g_translucent_samples_buffer[i];
+        float3 offset = hit - sample_point.position;
+        float d = dot(offset, offset);
+        if (d < nearest) {
+            color = sample_point.irradiance;
+            nearest = d;
+        }
+    }
+
+    payload.scatter     = 0;
+    payload.reflectance = 0;
+    payload.emission    = color;
+    payload.t           = RayTCurrent();
 }

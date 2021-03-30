@@ -44,13 +44,21 @@ struct Vertex {
     FLOAT3 normal;
 };
 
+struct SamplePoint {
+    FLOAT3 position;
+    FLOAT3 irradiance;
+};
+
 struct RaytracingGlobals {
+    UINT32 frame_rng;
     UINT32 accumulator_count;
     MATRIX camera_to_world;
     float  camera_aspect;
     float  camera_focal_length;
     UINT32 samples_per_pixel;
     UINT32 bounces_per_sample;
+
+    UINT32 translucent_samples_count;
 };
 
 struct RaytracingLocals {
