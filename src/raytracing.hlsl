@@ -107,7 +107,8 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
 
         if (!any(payload.reflectance)) {
             result.rgb = radiance;
-            result.a   = bounce_index == 0 ? 0 : 1;
+            result.a   = 1;
+            if (bounce_index == 0 && isinf(payload.t)) result.a = 0;
             break;
         }
 
