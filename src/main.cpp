@@ -823,6 +823,10 @@ int WINAPI wWinMain(
     g_raytracing_globals.frame_rng = GetTickCount64(); // initialize random seed
     g_raytracing_globals_buffer = create_upload_buffer(NULL, sizeof(g_raytracing_globals));
 
+    g_raytracing_globals.translucent_absorption = 1;
+    g_raytracing_globals.translucent_scattering = 10;
+    g_raytracing_globals.translucent_refraction = 1.35;
+
     // MAIN LOOP
 
     while (true) {
@@ -859,7 +863,7 @@ int WINAPI wWinMain(
             update_resolution();
         }
 
-        static UINT translucent_sample_point_density = 8;
+        static UINT translucent_sample_point_density = 4;
         static UINT translucent_samples_per_point    = 16384;
         if (g_do_collect_translucent_samples) {
             g_do_collect_translucent_samples = false;
@@ -950,6 +954,13 @@ int WINAPI wWinMain(
 
             g_do_reset_accumulator |= ImGui::SliderInt("samples##render", (int*) &g_raytracing_globals.samples_per_pixel,  1, 64, "%d", ImGuiSliderFlags_AlwaysClamp);
             g_do_reset_accumulator |= ImGui::SliderInt("bounces##render", (int*) &g_raytracing_globals.bounces_per_sample, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp);
+        }
+
+        { // translucent material
+            ImGui::Text("translucent material");
+            g_do_reset_accumulator |= ImGui::InputFloat("absorption", &g_raytracing_globals.translucent_absorption);
+            g_do_reset_accumulator |= ImGui::InputFloat("scattering", &g_raytracing_globals.translucent_scattering);
+            g_do_reset_accumulator |= ImGui::InputFloat("refractive index", &g_raytracing_globals.translucent_refraction);
         }
 
         { // translucent samples

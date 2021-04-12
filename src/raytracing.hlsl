@@ -210,16 +210,16 @@ void translucent_rgen() {
     ray.TMin = 0.0001;
     ray.TMax = 10000;
 
-    // point normal is packed into irradiance field for initialization
-    float3 normal           = sample_point.irradiance;
-    sample_point.irradiance = 0;
+    // point normal is packed into flux for initialization
+    float3 normal     = sample_point.flux;
+    sample_point.flux = 0;
 
     for (uint sample_index = 0; sample_index < g.samples_per_pixel; sample_index++) {
         ray.Origin    = sample_point.position;
         ray.Direction = random_on_hemisphere(rng, normal);
-        sample_point.irradiance += trace_path_sample(rng, ray).rgb;
+        sample_point.flux += trace_path_sample(rng, ray).rgb * dot(ray.Direction, normal);
     }
-    sample_point.irradiance /= g.samples_per_pixel;
+    sample_point.flux /= g.samples_per_pixel;
 
     g_translucent_samples_buffer[DispatchRaysIndex().x] = sample_point;
 }
@@ -240,21 +240,41 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
         return;
     }
 
-    float3 hit     = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
-    float  nearest = INFINITY;
-    float3 color   = 0;
+    float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
+
+    float attenuation           = g.translucent_scattering + g.translucent_absorption;
+    float mean_free_path        = 1 / attenuation;
+    float albedo                = g.translucent_scattering / attenuation;
+    float effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
+
+    float eta     = g.translucent_refraction;
+    float fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta; // diffuse fresnel, not fresnel reflectance?
+
+    float3 diffuse_exitance = 0;
     for (int i = 0; i < g.translucent_samples_count; i++) {
         SamplePoint sample_point = g_translucent_samples_buffer[i];
-        float3 offset = hit - sample_point.position;
-        float d = dot(offset, offset);
-        if (d < nearest) {
-            color = sample_point.irradiance;
-            nearest = d;
-        }
+        float3 offset  = sample_point.position - hit_point;
+        float  radius2 = dot(offset, offset);
+
+        // subsurface diffuse light source
+        float z_real    = mean_free_path;
+        float d_real    = sqrt(radius2 + z_real*z_real);
+        float c_real    = z_real * (effective_attenuation + 1/d_real);
+
+        // virtual light source above surface
+        float z_virtual = mean_free_path * (1 + 1.25*(1 + fresnel)/(1 - fresnel));
+        float d_virtual = sqrt(radius2 + z_virtual*z_virtual);
+        float c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
+
+        // combine real and virtual contributions
+        float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
+        float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
+        diffuse_exitance += albedo/(2*TAU) * (m_real + m_virtual) * sample_point.flux;
     }
+    diffuse_exitance /= g.translucent_samples_count;
 
     payload.scatter     = 0;
     payload.reflectance = 0;
-    payload.emission    = color;
+    payload.emission    = diffuse_exitance / TAU;
     payload.t           = RayTCurrent();
 }

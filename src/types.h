@@ -46,7 +46,7 @@ struct Vertex {
 
 struct SamplePoint {
     FLOAT3 position;
-    FLOAT3 irradiance;
+    FLOAT3 flux;
 };
 
 struct RaytracingGlobals {
@@ -59,6 +59,9 @@ struct RaytracingGlobals {
     UINT32 bounces_per_sample;
 
     UINT32 translucent_samples_count;
+    float  translucent_scattering;
+    float  translucent_absorption;
+    float  translucent_refraction;
 };
 
 struct RaytracingLocals {
