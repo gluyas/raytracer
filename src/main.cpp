@@ -1,34 +1,5 @@
-#include <stdlib.h>
-#include <time.h>
-
-#include <windows.h>
-
-#include <d3d12.h>
-#include <dxgi1_6.h>
-#include <d3dcompiler.h>
-
-#ifdef DEBUG
-#define DX12_ENABLE_DEBUG_LAYER
-#endif
-#ifdef DX12_ENABLE_DEBUG_LAYER
-#include <dxgidebug.h>
-#pragma comment(lib, "dxguid.lib")
-#endif
-
-#include "d3dx12.h"
-
-#include "imgui.h"
-#include "imgui_impl_win32.h"
-#include "imgui_impl_dx12.h"
-extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
-
 #define STB_IMAGE_WRITE_IMPLEMENTATION
-#include "stb_image_write.h"
-
-#include "types.h"
-using namespace DirectX;
-
-#include "array.h"
+#include "prelude.h"
 
 #include "parse_obj.h"
 

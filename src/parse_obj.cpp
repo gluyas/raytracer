@@ -1,15 +1,5 @@
 #include "parse_obj.h"
 
-#include <stdlib.h>
-#include <string.h>
-#include <stdio.h>
-#include <ctype.h>
-
-#include "types.h"
-using namespace DirectX;
-
-#include "array.h"
-
 UINT32 parse_floats(char** char_buf, UINT32 max_count, float* out) {
     char* substr = *char_buf;
     int i = 0;

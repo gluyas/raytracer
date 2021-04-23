@@ -1,6 +1,5 @@
 #pragma once
-
-#include "types.h"
+#include "prelude.h"
 
 // http://www.reedbeta.com/blog/quick-and-easy-gpu-random-numbers-in-d3d11/
 

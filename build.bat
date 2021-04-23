@@ -17,7 +17,7 @@ cl ^
     -Foout\ -Fdout\ -Feout\raytracer ^
     ^
     -Ilib -Ilib\imgui -Ilib\DirectXMath -I. ^
-    -DUNICODE -DDEBUG ^
+    -DCPP -DUNICODE -DDEBUG ^
     src\parse_obj.cpp src\main.cpp ^
     ^
     out\lib.lib ^
