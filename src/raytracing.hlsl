@@ -200,6 +200,19 @@ void miss(inout RayPayload payload) {
 
 // translucent materials
 
+float schlick(float refractive_index, float cosine) {
+    float r0 = (1 - g.translucent_refraction) / (1 + g.translucent_refraction);
+    r0 *= r0;
+
+    float fresnel;
+    fresnel  = 1 - cosine;
+    fresnel *= fresnel*fresnel*fresnel*fresnel;
+    fresnel *= 1 - r0;
+    fresnel += r0;
+
+    return fresnel;
+}
+
 [shader("raygeneration")]
 void translucent_rgen() {
     uint rng = hash(float3(DispatchRaysIndex().xy, g.accumulator_count));
@@ -231,50 +244,49 @@ TriangleHitGroup translucent_hit_group = {
 
 [shader("closesthit")]
 void translucent_chit(inout RayPayload payload, Attributes attr) {
-    if (!g.translucent_samples_count) {
-        // translucent_samples_count set to 0 for initialization
-        payload.scatter     = 0;
-        payload.reflectance = 0;
-        payload.emission    = 0;
-        payload.t           = RayTCurrent();
-        return;
-    }
-
+    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+    float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
     float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 
-    float attenuation           = g.translucent_scattering + g.translucent_absorption;
-    float mean_free_path        = 1 / attenuation;
-    float albedo                = g.translucent_scattering / attenuation;
-    float effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
-
-    float eta     = g.translucent_refraction;
-    float fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta; // diffuse fresnel, not fresnel reflectance?
-
     float3 diffuse_exitance = 0;
-    for (int i = 0; i < g.translucent_samples_count; i++) {
-        SamplePoint sample_point = g_translucent_samples_buffer[i];
-        float3 offset  = sample_point.position - hit_point;
-        float  radius2 = dot(offset, offset);
+    if (g.translucent_samples_count) {
+        float attenuation           = g.translucent_scattering + g.translucent_absorption;
+        float mean_free_path        = 1 / attenuation;
+        float albedo                = g.translucent_scattering / attenuation;
+        float effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
 
-        // subsurface diffuse light source
-        float z_real    = mean_free_path;
-        float d_real    = sqrt(radius2 + z_real*z_real);
-        float c_real    = z_real * (effective_attenuation + 1/d_real);
+        float eta             = g.translucent_refraction;
+        float diffuse_fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta; // diffuse fresnel, not fresnel reflectance?
 
-        // virtual light source above surface
-        float z_virtual = mean_free_path * (1 + 1.25*(1 + fresnel)/(1 - fresnel));
-        float d_virtual = sqrt(radius2 + z_virtual*z_virtual);
-        float c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
+        for (int i = 0; i < g.translucent_samples_count; i++) {
+            SamplePoint sample_point = g_translucent_samples_buffer[i];
+            float3 offset  = sample_point.position - hit_point;
+            float  radius2 = dot(offset, offset);
 
-        // combine real and virtual contributions
-        float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
-        float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
-        diffuse_exitance += albedo/(2*TAU) * (m_real + m_virtual) * sample_point.flux;
+            // subsurface diffuse light source
+            float z_real    = mean_free_path;
+            float d_real    = sqrt(radius2 + z_real*z_real);
+            float c_real    = z_real * (effective_attenuation + 1/d_real);
+
+            // virtual light source above surface
+            float z_virtual = mean_free_path * (1 + 1.25*(1 + diffuse_fresnel)/(1 - diffuse_fresnel));
+            float d_virtual = sqrt(radius2 + z_virtual*z_virtual);
+            float c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
+
+            // combine real and virtual contributions
+            float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
+            float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
+            diffuse_exitance += albedo/(2*TAU) * (m_real + m_virtual) * sample_point.flux;
+        }
+        diffuse_exitance /= g.translucent_samples_count;
     }
-    diffuse_exitance /= g.translucent_samples_count;
 
-    payload.scatter     = 0;
-    payload.reflectance = 0;
+    float3 scatter = random_on_hemisphere(payload.rng, normal);
+    float  cosine  = dot(scatter, normal);
+    float  fresnel = schlick(g.translucent_refraction, cosine);
+
+    payload.scatter     = scatter;
+    payload.reflectance = cosine * fresnel;
     payload.emission    = diffuse_exitance / TAU;
     payload.t           = RayTCurrent();
 }
