@@ -2,12 +2,9 @@
 #include "prelude.h"
 
 #include "parse_obj.h"
+#include "bluenoise.h"
 
 #include "out/raytracing.hlsl.h"
-
-// TODO: nicer error handling
-#define CHECK_RESULT(hresult) if ((hresult) != S_OK) abort()
-#define SET_NAME(object) CHECK_RESULT(object->SetName(L#object))
 
 #define SCENE_NAME "translucent_test"
 
@@ -523,7 +520,7 @@ int WINAPI wWinMain(
         auto pso_desc = CD3DX12_STATE_OBJECT_DESC(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
 
         auto dxil_subobject = pso_desc.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>(); {
-            auto bytecode = CD3DX12_SHADER_BYTECODE((void *) raytracing_hlsl_bytecode, _countof(raytracing_hlsl_bytecode));
+            auto bytecode = CD3DX12_SHADER_BYTECODE((void *) g_raytracing_hlsl_bytecode, _countof(g_raytracing_hlsl_bytecode));
             dxil_subobject->SetDXILLibrary(&bytecode);
         }
 
@@ -538,7 +535,7 @@ int WINAPI wWinMain(
     }
 
     // g_raytracing_global_root_signature
-    CHECK_RESULT(g_device->CreateRootSignature(0, raytracing_hlsl_bytecode, _countof(raytracing_hlsl_bytecode), IID_PPV_ARGS(&g_raytracing_global_root_signature)));
+    CHECK_RESULT(g_device->CreateRootSignature(0, g_raytracing_hlsl_bytecode, _countof(g_raytracing_hlsl_bytecode), IID_PPV_ARGS(&g_raytracing_global_root_signature)));
 
     // ASSET LOADING
 
@@ -798,6 +795,8 @@ int WINAPI wWinMain(
     g_raytracing_globals.translucent_scattering = 10;
     g_raytracing_globals.translucent_refraction = 1.35;
 
+Bluenoise::init(g_device);
+
     // MAIN LOOP
 
     while (true) {
@@ -902,7 +901,7 @@ int WINAPI wWinMain(
             g_raytracing_globals.camera_aspect = g_aspect;
             g_raytracing_globals.camera_focal_length = 1 / tanf(fov_y/2);
             XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
-            g_raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
+            XMStoreFloat4x4(&g_raytracing_globals.camera_to_world, XMMatrixInverse(NULL, view));
         }
 
         { // render settings

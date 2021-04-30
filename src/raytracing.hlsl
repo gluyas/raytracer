@@ -23,30 +23,6 @@ RaytracingAccelerationStructure g_scene    : register(t0);
 StructuredBuffer<Vertex>        g_vertices : register(t1);
 ByteAddressBuffer               g_indices  : register(t2);
 
-inline uint3 load_vertex_indices(uint triangle_index) {
-    const uint indices_per_triangle = 3;
-    const uint bytes_per_index      = 2;
-    const uint align_to_4bytes_mask = ~0x0003;
-    uint triangle_byte_index = triangle_index * indices_per_triangle * bytes_per_index;
-    uint aligned_byte_index  = triangle_byte_index & align_to_4bytes_mask;
-
-    dword2 four_indices = g_indices.Load2(aligned_byte_index);
-
-    uint3 indices;
-    if (triangle_byte_index == aligned_byte_index) {
-        // lower three indices
-        indices.x = (four_indices.x      ) & 0xffff;
-        indices.y = (four_indices.x >> 16) & 0xffff;
-        indices.z = (four_indices.y      ) & 0xffff;
-    } else {
-        // upper three indices
-        indices.x = (four_indices.x >> 16) & 0xffff;
-        indices.y = (four_indices.y      ) & 0xffff;
-        indices.z = (four_indices.y >> 16) & 0xffff;
-    }
-    return indices;
-}
-
 inline float3 get_interpolated_normal(uint3 vertex_indices, float2 barycentrics) {
     float3 normal;
     float3 normal_x = g_vertices[vertex_indices.x].normal;
@@ -165,7 +141,7 @@ TriangleHitGroup lambert_hit_group = {
 
 [shader("closesthit")]
 void lambert_chit(inout RayPayload payload, Attributes attr) {
-    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+    uint3  indices = load_3x16_bit_indices(g_indices, l.primitive_index_offset + PrimitiveIndex());
     float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
 
     payload.scatter     = random_on_hemisphere(payload.rng, normal);
@@ -181,7 +157,7 @@ TriangleHitGroup light_hit_group = {
 
 [shader("closesthit")]
 void light_chit(inout RayPayload payload, Attributes attr) {
-    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+    uint3  indices = load_3x16_bit_indices(g_indices, l.primitive_index_offset + PrimitiveIndex());
     float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
 
     payload.scatter     = 0;
@@ -244,7 +220,7 @@ TriangleHitGroup translucent_hit_group = {
 
 [shader("closesthit")]
 void translucent_chit(inout RayPayload payload, Attributes attr) {
-    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
+    uint3  indices = load_3x16_bit_indices(g_indices, l.primitive_index_offset + PrimitiveIndex());
     float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
     float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 
