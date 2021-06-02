@@ -5,7 +5,7 @@
 // SHADER RESOURCES
 
 GlobalRootSignature global_root_signature = {
-    "DescriptorTable(UAV(u0, numDescriptors = 3))," // 0: { g_render_target, g_sample_accumulator, g_translucent_samples_buffer }
+    "DescriptorTable(UAV(u0, numDescriptors = 3))," // 0: { g_render_target, g_sample_accumulator, g_translucent_samples }
     "CBV(b0)," // 1: g
     "SRV(t0)," // 2: g_scene
     "DescriptorTable(SRV(t1, numDescriptors = 2))," // 3: { g_vertices, g_indices }
@@ -15,7 +15,7 @@ RWTexture2D<float4> g_render_target       : register(u0);
 RWTexture2D<float4> g_sample_accumulator  : register(u1);
 
 // TODO: optimized data structure
-RWStructuredBuffer<SamplePoint> g_translucent_samples_buffer : register(u2);
+RWStructuredBuffer<SamplePoint> g_translucent_samples : register(u2);
 
 ConstantBuffer<RaytracingGlobals> g : register(b0);
 
@@ -23,36 +23,9 @@ RaytracingAccelerationStructure g_scene    : register(t0);
 StructuredBuffer<Vertex>        g_vertices : register(t1);
 ByteAddressBuffer               g_indices  : register(t2);
 
-inline uint3 load_vertex_indices(uint triangle_index) {
-    const uint indices_per_triangle = 3;
-    const uint bytes_per_index      = 2;
-    const uint align_to_4bytes_mask = ~0x0003;
-    uint triangle_byte_index = triangle_index * indices_per_triangle * bytes_per_index;
-    uint aligned_byte_index  = triangle_byte_index & align_to_4bytes_mask;
-
-    dword2 four_indices = g_indices.Load2(aligned_byte_index);
-
-    uint3 indices;
-    if (triangle_byte_index == aligned_byte_index) {
-        // lower three indices
-        indices.x = (four_indices.x      ) & 0xffff;
-        indices.y = (four_indices.x >> 16) & 0xffff;
-        indices.z = (four_indices.y      ) & 0xffff;
-    } else {
-        // upper three indices
-        indices.x = (four_indices.x >> 16) & 0xffff;
-        indices.y = (four_indices.y      ) & 0xffff;
-        indices.z = (four_indices.y >> 16) & 0xffff;
-    }
-    return indices;
-}
-
-inline float3 get_interpolated_normal(uint3 vertex_indices, float2 barycentrics) {
+inline float3 get_world_space_normal(uint3 triangle_indices, float2 barycentrics) {
     float3 normal;
-    float3 normal_x = g_vertices[vertex_indices.x].normal;
-    normal  = normal_x;
-    normal += barycentrics.x * (g_vertices[vertex_indices.y].normal - normal_x);
-    normal += barycentrics.y * (g_vertices[vertex_indices.z].normal - normal_x);
+    normal  = get_interpolated_normal(load_triangle_vertices(g_vertices, triangle_indices), barycentrics);
     normal  = mul(float4(normal, 0), ObjectToWorld4x3());
     normal *= -sign(dot(WorldRayDirection(), normal));
     normal  = normalize(normal);
@@ -96,7 +69,8 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
 
     float3 radiance    = 0;
     float3 reflectance = 1;
-    for (uint bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
+    uint bounce_index;
+    for (bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
         TraceRay(
             g_scene, RAY_FLAG_NONE, 0xff,
             0, 1, 0,
@@ -105,16 +79,13 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
         radiance    += payload.emission * reflectance;
         reflectance *= payload.reflectance;
 
-        if (!any(payload.reflectance)) {
-            result.rgb = radiance;
-            result.a   = 1;
-            if (bounce_index == 0 && isinf(payload.t)) result.a = 0;
-            break;
-        }
+        if (!any(payload.reflectance)) break;
 
         ray.Origin   += payload.t * ray.Direction;
         ray.Direction = payload.scatter;
     }
+    result.rgb = radiance;
+    result.a   = !(bounce_index == 0 && isinf(payload.t));
 
     rng = payload.rng; // write rng back out
     return result;
@@ -165,8 +136,8 @@ TriangleHitGroup lambert_hit_group = {
 
 [shader("closesthit")]
 void lambert_chit(inout RayPayload payload, Attributes attr) {
-    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
-    float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
+    uint3  indices = load_3x16bit_indices(g_indices, l.primitive_index_offset + PrimitiveIndex());
+    float3 normal  = get_world_space_normal(indices, attr.barycentrics);
 
     payload.scatter     = random_on_hemisphere(payload.rng, normal);
     payload.reflectance = l.color * dot(normal, payload.scatter);
@@ -181,8 +152,8 @@ TriangleHitGroup light_hit_group = {
 
 [shader("closesthit")]
 void light_chit(inout RayPayload payload, Attributes attr) {
-    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
-    float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
+    uint3  indices = load_3x16bit_indices(g_indices, l.primitive_index_offset + PrimitiveIndex());
+    float3 normal  = get_world_space_normal(indices, attr.barycentrics);
 
     payload.scatter     = 0;
     payload.reflectance = 0;
@@ -217,24 +188,25 @@ float schlick(float refractive_index, float cosine) {
 void translucent_rgen() {
     uint rng = hash(float3(DispatchRaysIndex().xy, g.accumulator_count));
 
-    SamplePoint sample_point = g_translucent_samples_buffer[DispatchRaysIndex().x];
+    SamplePoint sample_point = g_translucent_samples[DispatchRaysIndex().x];
 
     RayDesc ray;
     ray.TMin = 0.0001;
     ray.TMax = 10000;
 
-    // point normal is packed into flux for initialization
-    float3 normal     = sample_point.flux;
-    sample_point.flux = 0;
+    // point normal is packed into payload for initialization
+    float3 normal        = sample_point.payload;
+    sample_point.payload = 0;
 
+    // store incident flux into sample_point payload field
     for (uint sample_index = 0; sample_index < g.samples_per_pixel; sample_index++) {
         ray.Origin    = sample_point.position;
         ray.Direction = random_on_hemisphere(rng, normal);
-        sample_point.flux += trace_path_sample(rng, ray).rgb * dot(ray.Direction, normal);
+        sample_point.payload += trace_path_sample(rng, ray).rgb * dot(ray.Direction, normal);
     }
-    sample_point.flux /= g.samples_per_pixel;
+    sample_point.payload /= g.samples_per_pixel;
 
-    g_translucent_samples_buffer[DispatchRaysIndex().x] = sample_point;
+    g_translucent_samples[DispatchRaysIndex().x] = sample_point;
 }
 
 TriangleHitGroup translucent_hit_group = {
@@ -242,10 +214,13 @@ TriangleHitGroup translucent_hit_group = {
     "translucent_chit"
 };
 
+void debug_draw_translucent_samples(inout RayPayload payload, Attributes attr);
+
 [shader("closesthit")]
 void translucent_chit(inout RayPayload payload, Attributes attr) {
-    uint3  indices = load_vertex_indices(l.primitive_index_offset + PrimitiveIndex());
-    float3 normal  = get_interpolated_normal(indices, attr.barycentrics);
+    // debug_draw_translucent_samples(payload, attr); return; // debug visualisation of sample points
+    uint3  indices = load_3x16bit_indices(g_indices, l.primitive_index_offset + PrimitiveIndex());
+    float3 normal  = get_world_space_normal(indices, attr.barycentrics);
     float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 
     float3 diffuse_exitance = 0;
@@ -259,7 +234,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
         float diffuse_fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta; // diffuse fresnel, not fresnel reflectance?
 
         for (int i = 0; i < g.translucent_samples_count; i++) {
-            SamplePoint sample_point = g_translucent_samples_buffer[i];
+            SamplePoint sample_point = g_translucent_samples[i];
             float3 offset  = sample_point.position - hit_point;
             float  radius2 = dot(offset, offset);
 
@@ -276,7 +251,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
             // combine real and virtual contributions
             float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
             float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
-            diffuse_exitance += albedo/(2*TAU) * (m_real + m_virtual) * sample_point.flux;
+            diffuse_exitance += max(0, albedo/(2*TAU) * (m_real + m_virtual) * sample_point.payload);
         }
         diffuse_exitance /= g.translucent_samples_count;
     }
@@ -289,4 +264,50 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
     payload.reflectance = cosine * fresnel;
     payload.emission    = diffuse_exitance / TAU;
     payload.t           = RayTCurrent();
+}
+
+// DEBUG HELPERS
+
+void debug_draw_translucent_samples(inout RayPayload payload, Attributes attr) {
+    payload.scatter = 0;
+    payload.reflectance = 0;
+    payload.emission = 0;
+    payload.t = RayTCurrent();
+
+    const float rejection_radius = 0.01;
+    const float grid_cell_width = rejection_radius / sqrt(3);
+    const float3 grid_origin = -0.15299781;
+    const uint3  grid_dimensions = 53;
+
+    float3 hit = WorldRayOrigin() + RayTCurrent()*WorldRayDirection();
+
+    float3 cell = floor((hit - grid_origin) / grid_cell_width) % 3;
+    // payload.emission = cell / 2;
+
+    for (int i = g.translucent_samples_count-1; i >= 0; i--) {
+        SamplePoint sample_point = g_translucent_samples[i];
+
+        float3 d = sample_point.position - hit;
+        if (dot(d, d) <= rejection_radius*rejection_radius*0.25) {
+        // if (dot(d, d) <= 0.000001) {
+            payload.emission = 1;
+            // payload.emission = length(payload.emission) > 0.5*sqrt(2)? 0 : 1;
+            return;
+        }
+
+        // float3 m = WorldRayOrigin() - sample_point.position;
+        // float  b = dot(m, WorldRayDirection());
+        // float  c = dot(m, m) - rejection_radius*rejection_radius*0.25;
+        // if (c > 0 && b > 0) continue;
+
+        // float d = b*b - c;
+        // if (d < 0) continue;
+
+        // float e = sqrt(d);
+        // float t = -b - e;
+        // if (t >= 0) {
+        //     payload.emission = 1;
+        //     return;
+        // }
+    }
 }

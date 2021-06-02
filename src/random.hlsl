@@ -47,10 +47,10 @@ float random11(inout uint seed) {
     return asfloat(asuint(rand01) | (rand & 0x80000000));
 }
 
-// Generate a random integer in the range [lower, upper]
-uint random(inout uint seed, uint lower, uint upper) {
-    return lower + uint(float(upper - lower + 1) * random01(seed));
-}
+// // Generate a random integer in the range [lower, upper]
+// uint random(inout uint seed, uint lower, uint upper) {
+//     return lower + uint(float(upper - lower + 1) * random01(seed));
+// }
 
 // Generate a random float in the range [lower, upper)
 float random(inout uint seed, float lower, float upper) {

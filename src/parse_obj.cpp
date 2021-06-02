@@ -37,29 +37,25 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
 
     while (!feof(file)) {
         // read file
-        fgets(char_buf, char_buf_len, file);
+        char* substr = fgets(char_buf, char_buf_len, file);
         int error = ferror(file);
         if (error) {
             fprintf(stderr, "error reading obj file");
             exit(error);
         }
+        if (!substr) break; // end of file
 
         // parse
-        char* substr = char_buf;
         if (substr[0] == 'v') {
             // vertex attribute
             if (isspace(substr[1])) {
                 substr += 1;
                 // position
                 XMFLOAT3 v;
+
                 assert(parse_floats(&substr, 3, (float*) &v) == 3);
                 if (aabb) {
-                    aabb->min.x = fmin(v.x, aabb->min.x);
-                    aabb->max.x = fmax(v.x, aabb->max.x);
-                    aabb->min.y = fmin(v.y, aabb->min.y);
-                    aabb->max.y = fmax(v.y, aabb->max.y);
-                    aabb->min.z = fmin(v.z, aabb->min.z);
-                    aabb->max.z = fmax(v.z, aabb->max.z);
+                    *aabb = aabb_join(*aabb, XMLoadFloat3(&v));
                 }
                 array_push(&vs, v);
             } else if (substr[1] == 't' && isspace(substr[2])) {
@@ -136,13 +132,13 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
                 Index face_indices[] = {
                     (Index) (base_index+0), (Index) (base_index+1), (Index) (base_index+2)
                 };
-                array_concat(indices, VLA_VIEW(face_indices));
+                array_concat(indices, &VLA_VIEW(face_indices));
             } else if (verts_count == 4) {
                 Index face_indices[] = {
                     (Index) (base_index+0), (Index) (base_index+1), (Index) (base_index+2),
                     (Index) (base_index+0), (Index) (base_index+2), (Index) (base_index+3)
                 };
-                array_concat(indices, VLA_VIEW(face_indices));
+                array_concat(indices, &VLA_VIEW(face_indices));
             } else {
                 assert(false);
             }

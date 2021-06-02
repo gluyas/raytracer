@@ -1,15 +1,17 @@
 #define STB_IMAGE_WRITE_IMPLEMENTATION
 #include "prelude.h"
 
+#include "device.h"
+using Device::g_device;
+using Device::g_descriptor_size;
+using Device::g_rtv_descriptor_size;
+
 #include "parse_obj.h"
+#include "bluenoise.h"
 
-#include "out/raytracing.hlsl.h"
+#include "out/raytracing_hlsl.h"
 
-// TODO: nicer error handling
-#define CHECK_RESULT(hresult) if ((hresult) != S_OK) abort()
-#define SET_NAME(object) CHECK_RESULT(object->SetName(L#object))
-
-#define SCENE_NAME "translucent_test"
+#define SCENE_NAME "sample_points_test"
 
 #define WINDOW_STYLE_EX WS_EX_OVERLAPPEDWINDOW
 #define WINDOW_STYLE (WS_OVERLAPPEDWINDOW | WS_VISIBLE)
@@ -39,22 +41,13 @@ UINT  g_width;
 UINT  g_height;
 float g_aspect;
 
-#ifdef DEBUG
-ID3D12Debug* g_debug_controller = NULL;
-#endif
-IDXGIFactory7* g_dxgi_factory = NULL;
 ID3D12CommandQueue* g_cmd_queue = NULL;
-ID3D12Device5* g_device = NULL;
 IDXGISwapChain4* g_swapchain = NULL;
 ID3D12DescriptorHeap* g_rtv_descriptor_heap = NULL;
-UINT g_rtv_descriptor_size = 0;
 ID3D12Resource* g_rtvs[SWAPCHAIN_BUFFER_COUNT] = {};
-UINT64 g_fence_value = 0;
-ID3D12Fence* g_fence = NULL;
-HANDLE g_fence_event = NULL;
+Fence g_fence;
 
 ID3D12DescriptorHeap* g_descriptor_heap = NULL;
-UINT g_descriptor_size = 0;
 
 ID3D12Resource* g_blas_buffer = NULL;
 ID3D12Resource* g_tlas_buffer = NULL;
@@ -91,15 +84,6 @@ UINT g_prevent_resizing = 0;
 
 // UTILITY FUNCTIONS
 
-void wait_for_fence() {
-    g_fence_value += 1;
-    CHECK_RESULT(g_cmd_queue->Signal(g_fence, g_fence_value));
-    if (g_fence->GetCompletedValue() < g_fence_value) {
-        CHECK_RESULT(g_fence->SetEventOnCompletion(g_fence_value, g_fence_event));
-        WaitForSingleObject(g_fence_event, INFINITE);
-    }
-}
-
 void update_resolution() {
     { // get client area
         RECT rect;
@@ -122,7 +106,7 @@ void update_resolution() {
         g_swapchain_desc.AlphaMode          = DXGI_ALPHA_MODE_UNSPECIFIED;
 
         IDXGISwapChain1* swapchain1 = NULL;
-        CHECK_RESULT(g_dxgi_factory->CreateSwapChainForHwnd(
+        CHECK_RESULT(Device::g_dxgi_factory->CreateSwapChainForHwnd(
             g_cmd_queue, g_hwnd,
             &g_swapchain_desc, NULL, NULL,
             &swapchain1
@@ -252,13 +236,6 @@ UINT64 ensure_unsigned(UINT64 x) {
     return static_cast<UINT64>(max(static_cast<INT64>(x), 0));
 }
 
-template<typename T>
-inline void swap(T* a, T* b) {
-    T temp = *a;
-    *a = *b;
-    *b = temp;
-}
-
 ID3D12Resource* create_upload_buffer(void* data, UINT64 size_in_bytes) {
     ID3D12Resource* buffer = NULL;
     CHECK_RESULT(g_device->CreateCommittedResource(
@@ -291,78 +268,30 @@ void prepare_raytracing_pipeline(ID3D12GraphicsCommandList4* cmd_list) {
     cmd_list->SetPipelineState1(g_raytracing_pso);
 }
 
-void collect_translucent_samples(ID3D12GraphicsCommandList4* cmd_list, UINT sample_density, UINT radiance_samples_per_point) {
-    static Array<SamplePoint> sample_points        = {};
-    static ID3D12Resource*    sample_points_buffer = NULL;
+void collect_translucent_samples(ID3D12GraphicsCommandList4* cmd_list, float radius, UINT radiance_samples_per_point) {
+    Array<Vertex> vertices = {};
+    Array<Index>  indices  = {};
+    parse_obj_file("data/debug_cube.obj", &vertices, &indices);
 
-    // prepare g_translucent_samples_buffer to its state for initialization
-    UINT total_samples = sample_density*sample_density*6;
-
-    if (sample_points_buffer && sample_points.len != total_samples) {
+    static ID3D12Resource* sample_points_buffer = NULL;
+    if (sample_points_buffer) {
         sample_points_buffer->Release();
         sample_points_buffer = NULL;
     }
 
-    sample_points.len = 0;
-    array_reserve(&sample_points, total_samples);
+    UINT total_samples = Bluenoise::generate_sample_points(&sample_points_buffer, vertices, indices, radius);
+    if (total_samples == 0) abort();
 
-    float w = 0.15;
-    float d = 2*w / (float) sample_density;
-    for (UINT i = 0; i < sample_density; i++) {
-        float d_i = (i + 0.5) * d - w;
-        for (UINT j = 0; j < sample_density; j++) {
-            float d_j = (j + 0.5) * d - w;
-            array_push(&sample_points, { { d_i, d_j,  w  }, {0,0, 1} });
-            array_push(&sample_points, { { d_i, d_j, -w  }, {0,0,-1} });
-            array_push(&sample_points, { { d_i,  w,  d_j }, {0, 1,0} });
-            array_push(&sample_points, { { d_i, -w,  d_j }, {0,-1,0} });
-            array_push(&sample_points, { {  w,  d_i, d_j }, { 1,0,0} });
-            array_push(&sample_points, { { -w,  d_i, d_j }, {-1,0,0} });
-        }
-    }
+    // create g_translucent_samples_buffer UAV descriptor
+    D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
+    uav_desc.Format        = DXGI_FORMAT_UNKNOWN;
+    uav_desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
+    uav_desc.Buffer.FirstElement        = 0;
+    uav_desc.Buffer.NumElements         = total_samples;
+    uav_desc.Buffer.StructureByteStride = sizeof(SamplePoint);
 
-    ID3D12Resource* sample_points_upload_buffer = create_upload_buffer((void*) sample_points.ptr, total_samples*sizeof(SamplePoint));
-    SET_NAME(sample_points_upload_buffer);
-
-    if (!sample_points_buffer) {
-        // create g_translucent_samples_buffer resource
-        D3D12_RESOURCE_DESC resource_desc = {};
-        resource_desc.Dimension          = D3D12_RESOURCE_DIMENSION_BUFFER;
-        resource_desc.Format             = DXGI_FORMAT_UNKNOWN;
-        resource_desc.Width              = total_samples*sizeof(SamplePoint);
-        resource_desc.Height             = 1;
-        resource_desc.DepthOrArraySize   = 1;
-        resource_desc.MipLevels          = 1;
-        resource_desc.SampleDesc.Count   = 1;
-        resource_desc.SampleDesc.Quality = 0;
-        resource_desc.Layout             = D3D12_TEXTURE_LAYOUT_ROW_MAJOR;
-        resource_desc.Flags              = D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
-
-        CHECK_RESULT(g_device->CreateCommittedResource(
-            &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
-            &resource_desc, D3D12_RESOURCE_STATE_UNORDERED_ACCESS,
-            NULL,
-            IID_PPV_ARGS(&sample_points_buffer)
-        ));
-        SET_NAME(sample_points_buffer);
-
-        // create g_translucent_samples_buffer UAV descriptor
-        D3D12_UNORDERED_ACCESS_VIEW_DESC uav_desc = {};
-        uav_desc.Format        = DXGI_FORMAT_UNKNOWN;
-        uav_desc.ViewDimension = D3D12_UAV_DIMENSION_BUFFER;
-        uav_desc.Buffer.FirstElement        = 0;
-        uav_desc.Buffer.NumElements         = total_samples;
-        uav_desc.Buffer.StructureByteStride = sizeof(SamplePoint);
-
-        auto translucent_samples_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(g_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), TRANSLUCENT_SAMPLES_DESCRIPTOR_INDEX, g_descriptor_size);
-        g_device->CreateUnorderedAccessView(sample_points_buffer, NULL, &uav_desc, translucent_samples_descriptor);
-    }
-
-    // copy
-    cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(sample_points_buffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_DEST));
-    // cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(sample_points_upload_buffer, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_RESOURCE_STATE_COPY_SOURCE));
-    cmd_list->CopyResource(sample_points_buffer, sample_points_upload_buffer);
-    cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(sample_points_buffer, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_UNORDERED_ACCESS));
+    auto translucent_samples_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(g_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), TRANSLUCENT_SAMPLES_DESCRIPTOR_INDEX, g_descriptor_size);
+    g_device->CreateUnorderedAccessView(sample_points_buffer, NULL, &uav_desc, translucent_samples_descriptor);
 
     // update globals
     RaytracingGlobals temp_globals = g_raytracing_globals;
@@ -397,13 +326,11 @@ void collect_translucent_samples(ID3D12GraphicsCommandList4* cmd_list, UINT samp
     CHECK_RESULT(cmd_list->Close());
     ID3D12CommandList* cmd_lists[] = { cmd_list };
     g_cmd_queue->ExecuteCommandLists(_countof(cmd_lists), cmd_lists);
-    wait_for_fence();
+    Fence::increment_and_signal_and_wait(g_cmd_queue, &g_fence);
 
     // restore global state
     g_raytracing_globals.translucent_samples_count = total_samples;
     set_buffer_contents(g_raytracing_globals_buffer, &g_raytracing_globals, sizeof(RaytracingGlobals));
-
-    sample_points_upload_buffer->Release();
 }
 
 int WINAPI wWinMain(
@@ -434,27 +361,14 @@ int WINAPI wWinMain(
         );
     }
 
-    // DEVICE INTERFACE
+    srand(GetTickCount64());
 
-#ifdef DEBUG
-    // g_debug_controller
-    if (SUCCEEDED(D3D12GetDebugInterface(IID_PPV_ARGS(&g_debug_controller)))) {
-        g_debug_controller->EnableDebugLayer();
-    }
-#endif
+    // INITIALIZE MODULES
 
-    // g_dxgi_factory
-    CHECK_RESULT(CreateDXGIFactory1(IID_PPV_ARGS(&g_dxgi_factory)));
+    Device::init();
+    Bluenoise::init();
 
-    { // g_device
-        CHECK_RESULT(D3D12CreateDevice(NULL, D3D_FEATURE_LEVEL_12_1, IID_PPV_ARGS(&g_device)));
-
-        D3D12_FEATURE_DATA_D3D12_OPTIONS5 options5 = {};
-        CHECK_RESULT(g_device->CheckFeatureSupport(D3D12_FEATURE_D3D12_OPTIONS5, &options5, sizeof(options5)));
-        if (options5.RaytracingTier < D3D12_RAYTRACING_TIER_1_0) {
-            abort();
-        }
-    }
+    // PIPELINE
 
     { // g_cmd_queue
         D3D12_COMMAND_QUEUE_DESC g_cmd_queue_desc = {};
@@ -471,15 +385,9 @@ int WINAPI wWinMain(
 
         CHECK_RESULT(g_device->CreateDescriptorHeap(&g_rtv_descriptor_heap_desc, IID_PPV_ARGS(&g_rtv_descriptor_heap)));
     }
-    g_rtv_descriptor_size = g_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_RTV);
 
-    // g_fence, g_fence_event
-    CHECK_RESULT(g_device->CreateFence(g_fence_value, D3D12_FENCE_FLAG_NONE, IID_PPV_ARGS(&g_fence)));
-    g_fence_event = CreateEvent(NULL, FALSE, FALSE, NULL);
-    if (!g_fence_event) {
-        CHECK_RESULT(HRESULT_FROM_WIN32(GetLastError()));
-    }
-    g_fence_value = 0;
+    // g_fence, g_Fence::event
+    g_fence = Fence::make();
 
     { // g_descriptor_heap
         D3D12_DESCRIPTOR_HEAP_DESC g_descriptor_heap_desc = {};
@@ -488,7 +396,6 @@ int WINAPI wWinMain(
         g_descriptor_heap_desc.NumDescriptors = DESCRIPTORS_COUNT;
         CHECK_RESULT(g_device->CreateDescriptorHeap(&g_descriptor_heap_desc, IID_PPV_ARGS(&g_descriptor_heap)));
     }
-    g_descriptor_size = g_device->GetDescriptorHandleIncrementSize(D3D12_DESCRIPTOR_HEAP_TYPE_CBV_SRV_UAV);
 
     // IMGUI SETUP
 
@@ -523,7 +430,7 @@ int WINAPI wWinMain(
         auto pso_desc = CD3DX12_STATE_OBJECT_DESC(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
 
         auto dxil_subobject = pso_desc.CreateSubobject<CD3DX12_DXIL_LIBRARY_SUBOBJECT>(); {
-            auto bytecode = CD3DX12_SHADER_BYTECODE((void *) raytracing_hlsl_bytecode, _countof(raytracing_hlsl_bytecode));
+            auto bytecode = CD3DX12_SHADER_BYTECODE((void *) g_raytracing_hlsl_bytecode, _countof(g_raytracing_hlsl_bytecode));
             dxil_subobject->SetDXILLibrary(&bytecode);
         }
 
@@ -538,7 +445,7 @@ int WINAPI wWinMain(
     }
 
     // g_raytracing_global_root_signature
-    CHECK_RESULT(g_device->CreateRootSignature(0, raytracing_hlsl_bytecode, _countof(raytracing_hlsl_bytecode), IID_PPV_ARGS(&g_raytracing_global_root_signature)));
+    CHECK_RESULT(g_device->CreateRootSignature(0, g_raytracing_hlsl_bytecode, _countof(g_raytracing_hlsl_bytecode), IID_PPV_ARGS(&g_raytracing_global_root_signature)));
 
     // ASSET LOADING
 
@@ -585,7 +492,7 @@ int WINAPI wWinMain(
         // parse meshes into a single pair of index and vertex buffers
         Array<Vertex> vb_data = {};
         Array<Index>  ib_data = {};
-        Aabb aabb = { {NAN, NAN, NAN}, {NAN, NAN, NAN} };
+        Aabb aabb = AABB_NULL;
         for (int i = 0; i < _countof(scene_objects); i++) {
             // record offset into the ib array - combine with virtual address after geometry upload
             Index ib_offset = ib_data.len;
@@ -722,11 +629,9 @@ int WINAPI wWinMain(
 
         // tlas instance descs
         ID3D12Resource* instance_descs_buffer = NULL; {
-            XMFLOAT3 w = {
-                aabb.max.x-aabb.min.x,
-                aabb.max.y-aabb.min.y,
-                aabb.max.z-aabb.min.z,
-            };
+            XMFLOAT3 m; XMStoreFloat3(&m, aabb.min);
+            XMFLOAT3 w; XMStoreFloat3(&w, aabb.max-aabb.min);
+
             float scale = 0;
             scale = fmax(w.x, scale);
             scale = fmax(w.y, scale);
@@ -737,9 +642,9 @@ int WINAPI wWinMain(
             instance_desc.Transform[0][0] =-scale;
             instance_desc.Transform[1][2] = scale;
             instance_desc.Transform[2][1] = scale;
-            instance_desc.Transform[0][3] = scale*(aabb.min.x + w.x*0.5);
-            instance_desc.Transform[2][3] =-scale*(aabb.min.y + w.y*0.5);
-            instance_desc.Transform[1][3] =-scale*(aabb.min.z + w.z*0.5);
+            instance_desc.Transform[0][3] = scale*(m.x + w.x*0.5);
+            instance_desc.Transform[2][3] =-scale*(m.y + w.y*0.5);
+            instance_desc.Transform[1][3] =-scale*(m.z + w.z*0.5);
             instance_desc.InstanceMask = 1;
             instance_desc.AccelerationStructure = g_blas_buffer->GetGPUVirtualAddress();
 
@@ -752,9 +657,10 @@ int WINAPI wWinMain(
                 matrix = XMMatrixInverse(NULL, matrix);
                 XMStoreFloat3x4(&inverse_transform, matrix);
             }
-            inverse_transform._11 *= -1;
             swap(&inverse_transform._33, &inverse_transform._23);
             swap(&inverse_transform._22, &inverse_transform._32);
+            inverse_transform._22 *= -1;
+            inverse_transform._33 *= -1;
 
             geometry_descs[0].Triangles.Transform3x4 = create_upload_buffer(&inverse_transform, sizeof(inverse_transform))->GetGPUVirtualAddress();
         }
@@ -784,18 +690,18 @@ int WINAPI wWinMain(
 
         ID3D12CommandList* cmd_lists[] = { cmd_list };
         g_cmd_queue->ExecuteCommandLists(1, cmd_lists);
-        wait_for_fence();
+        Fence::increment_and_signal_and_wait(g_cmd_queue, &g_fence);
 
         scratch_buffer->Release();
     }
 
-    g_raytracing_globals.samples_per_pixel  = 16;
+    g_raytracing_globals.samples_per_pixel  = 1;
     g_raytracing_globals.bounces_per_sample = 4;
     g_raytracing_globals.frame_rng = GetTickCount64(); // initialize random seed
     g_raytracing_globals_buffer = create_upload_buffer(NULL, sizeof(g_raytracing_globals));
 
-    g_raytracing_globals.translucent_absorption = 1;
-    g_raytracing_globals.translucent_scattering = 10;
+    g_raytracing_globals.translucent_absorption = 0.01;
+    g_raytracing_globals.translucent_scattering = 50;
     g_raytracing_globals.translucent_refraction = 1.35;
 
     // MAIN LOOP
@@ -813,7 +719,7 @@ int WINAPI wWinMain(
 
         // synchronize with g_device
         // TODO: pipeline frames
-        wait_for_fence();
+        Fence::increment_and_signal_and_wait(g_cmd_queue, &g_fence);
 
         { // generate new rng seed for frame
             UINT rng = g_raytracing_globals.frame_rng;
@@ -834,7 +740,7 @@ int WINAPI wWinMain(
             update_resolution();
         }
 
-        static UINT translucent_sample_point_density = 4;
+        static float translucent_sample_point_radius = 0.01;
         static UINT translucent_samples_per_point    = 16384;
         if (g_do_collect_translucent_samples) {
             g_do_collect_translucent_samples = false;
@@ -842,7 +748,7 @@ int WINAPI wWinMain(
 
             CHECK_RESULT(cmd_allocator->Reset());
             CHECK_RESULT(cmd_list->Reset(cmd_allocator, NULL));
-            collect_translucent_samples(cmd_list, translucent_sample_point_density, translucent_samples_per_point);
+            collect_translucent_samples(cmd_list, translucent_sample_point_radius, translucent_samples_per_point);
         }
 
         // poll mouse input
@@ -902,7 +808,7 @@ int WINAPI wWinMain(
             g_raytracing_globals.camera_aspect = g_aspect;
             g_raytracing_globals.camera_focal_length = 1 / tanf(fov_y/2);
             XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
-            g_raytracing_globals.camera_to_world = XMMatrixInverse(NULL, view);
+            XMStoreFloat4x4(&g_raytracing_globals.camera_to_world, XMMatrixInverse(NULL, view));
         }
 
         { // render settings
@@ -924,19 +830,19 @@ int WINAPI wWinMain(
             }
 
             g_do_reset_accumulator |= ImGui::SliderInt("samples##render", (int*) &g_raytracing_globals.samples_per_pixel,  1, 64, "%d", ImGuiSliderFlags_AlwaysClamp);
-            g_do_reset_accumulator |= ImGui::SliderInt("bounces##render", (int*) &g_raytracing_globals.bounces_per_sample, 1, 16, "%d", ImGuiSliderFlags_AlwaysClamp);
+            g_do_reset_accumulator |= ImGui::SliderInt("bounces##render", (int*) &g_raytracing_globals.bounces_per_sample, 0, 16, "%d", ImGuiSliderFlags_AlwaysClamp);
         }
 
         { // translucent material
             ImGui::Text("translucent material");
-            g_do_reset_accumulator |= ImGui::InputFloat("absorption", &g_raytracing_globals.translucent_absorption);
-            g_do_reset_accumulator |= ImGui::InputFloat("scattering", &g_raytracing_globals.translucent_scattering);
-            g_do_reset_accumulator |= ImGui::InputFloat("refractive index", &g_raytracing_globals.translucent_refraction);
+            g_do_reset_accumulator |= ImGui::SliderFloat("absorption", &g_raytracing_globals.translucent_absorption, 0.0, 50.0);
+            g_do_reset_accumulator |= ImGui::SliderFloat("scattering", &g_raytracing_globals.translucent_scattering, 0.0, 500.0);
+            g_do_reset_accumulator |= ImGui::SliderFloat("refractive index", &g_raytracing_globals.translucent_refraction, 1.0, 2.0);
         }
 
         { // translucent samples
             ImGui::Text("translucent samples");
-            ImGui::SliderInt("density##translucent", (int*) &translucent_sample_point_density, 1, 16,    "%d", ImGuiSliderFlags_AlwaysClamp);
+            ImGui::SliderFloat("radius##translucent", &translucent_sample_point_radius, 0.001, 0.3, "%.3f", ImGuiSliderFlags_Logarithmic);
             ImGui::SliderInt("samples##translucent", (int*) &translucent_samples_per_point,    1, 32768, "%d", ImGuiSliderFlags_AlwaysClamp);
             g_do_collect_translucent_samples |= ImGui::Button("resample");
         }
