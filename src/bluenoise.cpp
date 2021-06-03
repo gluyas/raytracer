@@ -136,8 +136,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = sizeof(Vertex);
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_NONE;
 
-        vertices = Descriptor::make_srv(buffer, desc);
-        SET_NAME(vertices.resource);
+        vertices = Descriptor::make_srv(buffer, desc, L"vertices");
         array_push(&resources, vertices.resource);
     }
 
@@ -150,8 +149,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = 0;
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_RAW;
 
-        indices = Descriptor::make_srv(buffer, desc);
-        SET_NAME(indices.resource);
+        indices = Descriptor::make_srv(buffer, desc, L"indices");
         array_push(&resources, indices.resource);
     }
 
@@ -164,8 +162,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = 0;
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_NONE;
 
-        partial_surface_areas = Descriptor::make_srv(buffer, desc);
-        SET_NAME(partial_surface_areas.resource);
+        partial_surface_areas = Descriptor::make_srv(buffer, desc, L"partial_surface_areas");
         array_push(&resources, partial_surface_areas.resource);
     }
 
@@ -183,8 +180,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = sizeof(InitialSamplePoint);
         desc.Buffer.NumElements         = initial_sample_points_count;
 
-        initial_sample_points = Descriptor::make_uav(buffer, desc);
-        SET_NAME(initial_sample_points.resource);
+        initial_sample_points = Descriptor::make_uav(buffer, desc, L"initial_sample_points");
         array_push(&resources, initial_sample_points.resource);
     }
 
@@ -195,8 +191,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = sizeof(HashtableBucket);
         desc.Buffer.NumElements         = g.hashtable_buckets_count;
 
-        hashtable = Descriptor::make_uav(buffer, desc);
-        SET_NAME(hashtable.resource);
+        hashtable = Descriptor::make_uav(buffer, desc, L"hashtable");
         array_push(&resources, hashtable.resource);
     }
 
@@ -297,7 +292,7 @@ UINT generate_sample_points(
     copy_to_upload_buffer(globals.cbv(), array_of(&g));
 
     *sample_points_buffer = create_buffer(g.sample_points_capacity*sizeof(SamplePoint), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    RootArgument sample_points = RootArgument::make_uav(*sample_points_buffer);
+    RootArgument sample_points = RootArgument::make_uav(*sample_points_buffer, L"sample_points");
     root_arguments[4] = &sample_points;
 
     root_arguments[0] = &sample_gen_args;

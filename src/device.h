@@ -13,6 +13,7 @@ struct Fence {
 };
 
 struct Descriptor {
+    LPCWSTR name;
     ID3D12Resource* resource;
 
     enum Tag {
@@ -26,9 +27,9 @@ struct Descriptor {
         D3D12_UNORDERED_ACCESS_VIEW_DESC _uav_desc;
     };
 
-    static Descriptor make_cbv(ID3D12Resource* resource = NULL, D3D12_CONSTANT_BUFFER_VIEW_DESC  desc = {});
-    static Descriptor make_srv(ID3D12Resource* resource = NULL, D3D12_SHADER_RESOURCE_VIEW_DESC  desc = {});
-    static Descriptor make_uav(ID3D12Resource* resource = NULL, D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {});
+    static Descriptor make_cbv(ID3D12Resource* resource = NULL, D3D12_CONSTANT_BUFFER_VIEW_DESC  desc = {}, LPCWSTR name = NULL);
+    static Descriptor make_srv(ID3D12Resource* resource = NULL, D3D12_SHADER_RESOURCE_VIEW_DESC  desc = {}, LPCWSTR name = NULL);
+    static Descriptor make_uav(ID3D12Resource* resource = NULL, D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {}, LPCWSTR name = NULL);
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC&  cbv_desc();
     D3D12_SHADER_RESOURCE_VIEW_DESC&  srv_desc();
@@ -41,6 +42,8 @@ struct DescriptorTable {
 };
 
 struct RootArgument {
+    LPCWSTR name;
+
     enum Tag {
         RootCbv,
         RootSrv,
@@ -56,11 +59,11 @@ struct RootArgument {
         DescriptorTable* _descriptor_table;
     };
 
-    static RootArgument make_cbv(ID3D12Resource* cbv = NULL);
-    static RootArgument make_srv(ID3D12Resource* srv = NULL);
-    static RootArgument make_uav(ID3D12Resource* uav = NULL);
-    static RootArgument make_consts(ArrayView<void> consts = {});
-    static RootArgument make_descriptor_table(DescriptorTable* descriptor_table = NULL);
+    static RootArgument make_cbv(ID3D12Resource* cbv = NULL, LPCWSTR name = NULL);
+    static RootArgument make_srv(ID3D12Resource* srv = NULL, LPCWSTR name = NULL);
+    static RootArgument make_uav(ID3D12Resource* uav = NULL, LPCWSTR name = NULL);
+    static RootArgument make_consts(ArrayView<void> consts = {}, LPCWSTR name = NULL);
+    static RootArgument make_descriptor_table(DescriptorTable* descriptor_table = NULL, LPCWSTR name = NULL);
 
     ID3D12Resource*& cbv();
     ID3D12Resource*& srv();

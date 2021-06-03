@@ -256,18 +256,21 @@ void Fence::wait(ID3D12CommandQueue* cmd_queue, Fence* fence, UINT64 value) {
 // Device::Descriptor methods
 
 // constructors
-Descriptor Descriptor::make_cbv(ID3D12Resource* resource, D3D12_CONSTANT_BUFFER_VIEW_DESC desc) {
-    Descriptor descriptor = { resource, Descriptor::Tag::CbvDescriptor };
+Descriptor Descriptor::make_cbv(ID3D12Resource* resource, D3D12_CONSTANT_BUFFER_VIEW_DESC desc, LPCWSTR name) {
+    if (name && resource) resource->SetName(name);
+    Descriptor descriptor = { name, resource, Descriptor::Tag::CbvDescriptor };
     descriptor._cbv_desc = desc;
     return descriptor;
 }
-Descriptor Descriptor::make_srv(ID3D12Resource* resource, D3D12_SHADER_RESOURCE_VIEW_DESC  desc) {
-    Descriptor descriptor = { resource, Descriptor::Tag::SrvDescriptor };
+Descriptor Descriptor::make_srv(ID3D12Resource* resource, D3D12_SHADER_RESOURCE_VIEW_DESC  desc, LPCWSTR name) {
+    if (name && resource) resource->SetName(name);
+    Descriptor descriptor = { name, resource, Descriptor::Tag::SrvDescriptor };
     descriptor._srv_desc = desc;
     return descriptor;
 }
-Descriptor Descriptor::make_uav(ID3D12Resource* resource, D3D12_UNORDERED_ACCESS_VIEW_DESC desc) {
-    Descriptor descriptor = { resource, Descriptor::Tag::UavDescriptor };
+Descriptor Descriptor::make_uav(ID3D12Resource* resource, D3D12_UNORDERED_ACCESS_VIEW_DESC desc, LPCWSTR name) {
+    if (name && resource) resource->SetName(name);
+    Descriptor descriptor = { name, resource, Descriptor::Tag::UavDescriptor };
     descriptor._uav_desc = desc;
     return descriptor;
 }
@@ -289,28 +292,31 @@ D3D12_UNORDERED_ACCESS_VIEW_DESC& Descriptor::uav_desc() {
 // Device::RootArgument methods
 
 // constructors
-RootArgument RootArgument::make_cbv(ID3D12Resource* cbv) {
-    RootArgument arg = { RootArgument::Tag::RootCbv };
+RootArgument RootArgument::make_cbv(ID3D12Resource* cbv, LPCWSTR name) {
+    if (name && cbv) cbv->SetName(name);
+    RootArgument arg = { name, RootArgument::Tag::RootCbv };
     arg._cbv = cbv;
     return arg;
 }
-RootArgument RootArgument::make_srv(ID3D12Resource* srv) {
-    RootArgument arg = { RootArgument::Tag::RootSrv };
+RootArgument RootArgument::make_srv(ID3D12Resource* srv, LPCWSTR name) {
+    if (name && srv) srv->SetName(name);
+    RootArgument arg = { name, RootArgument::Tag::RootSrv };
     arg._srv = srv;
     return arg;
 }
-RootArgument RootArgument::make_uav(ID3D12Resource* uav) {
-    RootArgument arg = { RootArgument::Tag::RootUav };
+RootArgument RootArgument::make_uav(ID3D12Resource* uav, LPCWSTR name) {
+    if (name && uav) uav->SetName(name);
+    RootArgument arg = { name, RootArgument::Tag::RootUav };
     arg._uav = uav;
     return arg;
 }
-RootArgument RootArgument::make_consts(ArrayView<void> consts) {
-    RootArgument arg = { RootArgument::Tag::RootConsts };
+RootArgument RootArgument::make_consts(ArrayView<void> consts, LPCWSTR name) {
+    RootArgument arg = { name, RootArgument::Tag::RootConsts };
     arg._consts = consts;
     return arg;
 }
-RootArgument RootArgument::make_descriptor_table(DescriptorTable* descriptor_table) {
-    RootArgument arg = { RootArgument::Tag::RootDescriptorTable };
+RootArgument RootArgument::make_descriptor_table(DescriptorTable* descriptor_table, LPCWSTR name) {
+    RootArgument arg = { name, RootArgument::Tag::RootDescriptorTable };
     arg._descriptor_table = descriptor_table;
     return arg;
 }
