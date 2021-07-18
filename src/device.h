@@ -17,19 +17,28 @@ struct Descriptor {
     ID3D12Resource* resource;
 
     enum Tag {
+        NotSet,
         CbvDescriptor,
         SrvDescriptor,
         UavDescriptor
     } tag;
+    bool use_default_desc;
     union {
-        D3D12_CONSTANT_BUFFER_VIEW_DESC  _cbv_desc; // cbv.BufferLocation must be updated with resource's address on CBV creation
+        D3D12_CONSTANT_BUFFER_VIEW_DESC  _cbv_desc; // cbv.BufferLocation will be kept updated by set_descriptor_table_on_heap
         D3D12_SHADER_RESOURCE_VIEW_DESC  _srv_desc;
         D3D12_UNORDERED_ACCESS_VIEW_DESC _uav_desc;
     };
 
-    static Descriptor make_cbv(ID3D12Resource* resource = NULL, D3D12_CONSTANT_BUFFER_VIEW_DESC  desc = {}, LPCWSTR name = NULL);
-    static Descriptor make_srv(ID3D12Resource* resource = NULL, D3D12_SHADER_RESOURCE_VIEW_DESC  desc = {}, LPCWSTR name = NULL);
-    static Descriptor make_uav(ID3D12Resource* resource = NULL, D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {}, LPCWSTR name = NULL);
+    inline bool operator !() {
+        return this->tag == NotSet;
+    }
+
+    static Descriptor cbv(ID3D12Resource* resource = NULL, D3D12_CONSTANT_BUFFER_VIEW_DESC  desc = {}, LPCWSTR name = NULL);
+    static Descriptor srv(ID3D12Resource* resource = NULL, D3D12_SHADER_RESOURCE_VIEW_DESC  desc = {}, LPCWSTR name = NULL);
+    static Descriptor uav(ID3D12Resource* resource = NULL, D3D12_UNORDERED_ACCESS_VIEW_DESC desc = {}, LPCWSTR name = NULL);
+
+    static Descriptor srv_with_default_desc(ID3D12Resource* resource = NULL, LPCWSTR name = NULL);
+    static Descriptor uav_with_default_desc(ID3D12Resource* resource = NULL, LPCWSTR name = NULL);
 
     D3D12_CONSTANT_BUFFER_VIEW_DESC&  cbv_desc();
     D3D12_SHADER_RESOURCE_VIEW_DESC&  srv_desc();
@@ -39,12 +48,15 @@ struct Descriptor {
 struct DescriptorTable {
     UINT offset_into_heap;
     ArrayView<Descriptor*> descriptors;
+
+    static UINT offset_after(DescriptorTable* dt);
 };
 
 struct RootArgument {
     LPCWSTR name;
 
     enum Tag {
+        NotSet,
         RootCbv,
         RootSrv,
         RootUav,
@@ -52,24 +64,45 @@ struct RootArgument {
         RootDescriptorTable
     } tag;
     union {
-        ID3D12Resource* _cbv;
-        ID3D12Resource* _srv;
-        ID3D12Resource* _uav;
+        ID3D12Resource** _cbv;
+        ID3D12Resource** _srv;
+        ID3D12Resource** _uav;
         ArrayView<void> _consts;
         DescriptorTable* _descriptor_table;
     };
 
-    static RootArgument make_cbv(ID3D12Resource* cbv = NULL, LPCWSTR name = NULL);
-    static RootArgument make_srv(ID3D12Resource* srv = NULL, LPCWSTR name = NULL);
-    static RootArgument make_uav(ID3D12Resource* uav = NULL, LPCWSTR name = NULL);
-    static RootArgument make_consts(ArrayView<void> consts = {}, LPCWSTR name = NULL);
-    static RootArgument make_descriptor_table(DescriptorTable* descriptor_table = NULL, LPCWSTR name = NULL);
+    inline bool operator !() {
+        switch (this->tag) {
+            case NotSet: {
+                return !false;
+            } break;
+            case RootCbv: {
+                return !this->_cbv;
+            } break;
+            case RootSrv: {
+                return !this->_srv;
+            } break;
+            case RootUav: {
+                return !this->_uav;
+            } break;
+            case RootConsts: {
+                return !this->_consts;
+            } break;
+            case RootDescriptorTable: {
+                return !this->_descriptor_table;
+            } break;
+            default: {
+                abort();
+            } break;
+        }
+    }
 
-    ID3D12Resource*& cbv();
-    ID3D12Resource*& srv();
-    ID3D12Resource*& uav();
-    ArrayView<void>& consts();
-    DescriptorTable*& descriptor_table();
+    static RootArgument not_set(LPCWSTR name = NULL);
+    static RootArgument cbv(ID3D12Resource** cbv = NULL, LPCWSTR name = NULL);
+    static RootArgument srv(ID3D12Resource** srv = NULL, LPCWSTR name = NULL);
+    static RootArgument uav(ID3D12Resource** uav = NULL, LPCWSTR name = NULL);
+    static RootArgument consts(ArrayView<void> consts = {}, LPCWSTR name = NULL);
+    static RootArgument descriptor_table(DescriptorTable* descriptor_table = NULL, LPCWSTR name = NULL);
 };
 
 namespace Device {
@@ -93,6 +126,8 @@ void release_temp_resources(Array<ID3D12Resource*>* temp_resources = NULL);
 } // namespace Device
 
 ID3D12Resource* create_buffer(UINT64 size_in_bytes, D3D12_RESOURCE_STATES initial_state, D3D12_HEAP_TYPE heap_type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
+ID3D12Resource* create_upload_buffer(UINT64 size_in_bytes);
+ID3D12Resource* create_upload_buffer(ArrayView<void> data);
 ID3D12Resource* create_buffer_and_write_contents(ID3D12GraphicsCommandList* cmd_list, ArrayView<void> data, D3D12_RESOURCE_STATES initial_state, ID3D12Resource** upload_buffer, D3D12_HEAP_TYPE heap_type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 
 void copy_to_upload_buffer(ID3D12Resource* dst, ArrayView<void> src);
@@ -103,4 +138,4 @@ void write_to_buffer(ID3D12GraphicsCommandList* cmd_list, ID3D12Resource* dst, D
 ID3D12Resource* read_from_buffer(ID3D12GraphicsCommandList* cmd_list, ID3D12Resource* src, D3D12_RESOURCE_STATES src_state, ID3D12Resource** readback_buffer);
 
 void set_descriptor_table_on_heap(ID3D12DescriptorHeap* descriptor_heap, DescriptorTable* descriptor_table);
-void set_root_arguments(ID3D12GraphicsCommandList* cmd_list, ID3D12DescriptorHeap* descriptor_heap, ArrayView<RootArgument*> arguments);
+void set_root_arguments(ID3D12GraphicsCommandList* cmd_list, ID3D12DescriptorHeap* descriptor_heap, ArrayView<RootArgument> arguments);

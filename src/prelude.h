@@ -107,9 +107,15 @@ struct RaytracingGlobals {
     COMMON_FLOAT    camera_focal_length;
 
     COMMON_UINT     translucent_samples_count;
+
+    // dipole model
     COMMON_FLOAT    translucent_scattering;
     COMMON_FLOAT    translucent_absorption;
     COMMON_FLOAT    translucent_refraction;
+
+    // tabulated
+    COMMON_UINT     translucent_tabulated_bssrdf_count;
+    COMMON_FLOAT    translucent_tabulated_bssrdf_stepsize;
 };
 
 struct RaytracingLocals {
@@ -128,6 +134,19 @@ inline void swap(T* a, T* b) {
     *b = temp;
 }
 
+inline float clamp(float x, float a, float b) {
+    return fmax(fmin(x, b), a);
+}
+
+inline UINT64 round_up(UINT64 x, UINT64 d) {
+    if (x) return (1 + (x - 1) / d) * d;
+    else   return d;
+}
+
+inline UINT64 ensure_unsigned(UINT64 x) {
+    return static_cast<UINT64>(max(static_cast<INT64>(x), 0));
+}
+
 // winapi/d3d12 helpers
 // TODO: nicer error handling
 #define CHECK_RESULT(hresult) if ((hresult) != S_OK) abort()
@@ -135,6 +154,10 @@ inline void swap(T* a, T* b) {
 
 #endif
 #ifdef HLSL
+
+inline float length2(float4 x) { return dot(x, x); };
+inline float length2(float3 x) { return dot(x, x); };
+inline float length2(float2 x) { return dot(x, x); };
 
 inline uint3 load_3x16bit_indices(uniform ByteAddressBuffer index_buffer, uint primitive_index) {
     const uint indices_per_primitive = 3;

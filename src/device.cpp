@@ -65,6 +65,14 @@ ID3D12Resource* create_buffer(UINT64 size_in_bytes, D3D12_RESOURCE_STATES initia
     return buffer;
 }
 
+ID3D12Resource* create_upload_buffer(UINT64 size_in_bytes) {
+    return create_buffer(size_in_bytes, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+}
+
+ID3D12Resource* create_upload_buffer(ArrayView<void> data) {
+    return create_buffer_and_write_contents(NULL, data, D3D12_RESOURCE_STATE_GENERIC_READ, NULL, D3D12_HEAP_TYPE_UPLOAD);
+}
+
 void create_or_check_capacity_of_temp_buffer(ID3D12Resource*** temp_buffer, UINT64 size, D3D12_RESOURCE_STATES initial_state, D3D12_HEAP_TYPE heap_type) {
     if (!temp_buffer) abort();
     if (!*temp_buffer) {
@@ -79,6 +87,7 @@ void create_or_check_capacity_of_temp_buffer(ID3D12Resource*** temp_buffer, UINT
 
 ID3D12Resource* create_buffer_and_write_contents(ID3D12GraphicsCommandList* cmd_list, ArrayView<void> data, D3D12_RESOURCE_STATES initial_state, ID3D12Resource** upload_buffer, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS flags) {
     if (heap_type == D3D12_HEAP_TYPE_UPLOAD || heap_type == D3D12_HEAP_TYPE_READBACK) {
+        // don't use cmd_list or upload_buffer
         ID3D12Resource* buffer = create_buffer(data.len, initial_state, heap_type);
         copy_to_upload_buffer(buffer, data);
         return buffer;
@@ -144,7 +153,7 @@ ID3D12Resource* read_from_buffer(ID3D12GraphicsCommandList* cmd_list, ID3D12Reso
     return *readback_buffer;
 }
 
-// root argument helpers
+// resource binding helpers
 
 void set_descriptor_table_on_heap(ID3D12DescriptorHeap* descriptor_heap, DescriptorTable* dt) {
     D3D12_CPU_DESCRIPTOR_HANDLE dt_base = CD3DX12_CPU_DESCRIPTOR_HANDLE(
@@ -154,7 +163,7 @@ void set_descriptor_table_on_heap(ID3D12DescriptorHeap* descriptor_heap, Descrip
 
     for (UINT i = 0; i < dt->descriptors.len; i++) {
         Descriptor* descriptor = dt->descriptors[i];
-        if (!descriptor) continue;
+        if (!descriptor || !*descriptor) continue;
 
         D3D12_CPU_DESCRIPTOR_HANDLE handle = CD3DX12_CPU_DESCRIPTOR_HANDLE(dt_base, i*g_descriptor_size);
 
@@ -166,11 +175,13 @@ void set_descriptor_table_on_heap(ID3D12DescriptorHeap* descriptor_heap, Descrip
             } break;
 
             case Descriptor::Tag::SrvDescriptor: {
-                g_device->CreateShaderResourceView(descriptor->resource, &descriptor->srv_desc(), handle);
+                D3D12_SHADER_RESOURCE_VIEW_DESC* desc = descriptor->use_default_desc? NULL : &descriptor->srv_desc();
+                g_device->CreateShaderResourceView(descriptor->resource, desc, handle);
             } break;
 
             case Descriptor::Tag::UavDescriptor: {
-                g_device->CreateUnorderedAccessView(descriptor->resource, NULL, &descriptor->uav_desc(), handle);
+                D3D12_UNORDERED_ACCESS_VIEW_DESC* desc = descriptor->use_default_desc? NULL : &descriptor->uav_desc();
+                g_device->CreateUnorderedAccessView(descriptor->resource, NULL, desc, handle);
             } break;
 
             default: {
@@ -180,31 +191,31 @@ void set_descriptor_table_on_heap(ID3D12DescriptorHeap* descriptor_heap, Descrip
     }
 }
 
-void set_root_arguments(ID3D12GraphicsCommandList* cmd_list, ID3D12DescriptorHeap* descriptor_heap, ArrayView<RootArgument*> args) {
+void set_root_arguments(ID3D12GraphicsCommandList* cmd_list, ID3D12DescriptorHeap* descriptor_heap, ArrayView<RootArgument> args) {
     for (UINT i = 0; i < args.len; i++) {
-        RootArgument* arg = args[i];
+        RootArgument arg = args[i];
         if (!arg) continue;
 
-        switch (arg->tag) {
+        switch (arg.tag) {
             case RootArgument::Tag::RootCbv: {
-                cmd_list->SetComputeRootConstantBufferView(i, arg->cbv()->GetGPUVirtualAddress());
+                cmd_list->SetComputeRootConstantBufferView(i, (*arg._cbv)->GetGPUVirtualAddress());
             } break;
 
             case RootArgument::Tag::RootSrv: {
-                cmd_list->SetComputeRootShaderResourceView(i, arg->srv()->GetGPUVirtualAddress());
+                cmd_list->SetComputeRootShaderResourceView(i, (*arg._srv)->GetGPUVirtualAddress());
             } break;
 
             case RootArgument::Tag::RootUav: {
-                cmd_list->SetComputeRootUnorderedAccessView(i, arg->uav()->GetGPUVirtualAddress());
+                cmd_list->SetComputeRootUnorderedAccessView(i, (*arg._uav)->GetGPUVirtualAddress());
             } break;
 
             case RootArgument::Tag::RootConsts: {
-                ArrayView<UINT32>* consts = &((ArrayView<UINT32>) arg->consts());
+                ArrayView<UINT32>* consts = &((ArrayView<UINT32>) arg._consts);
                 cmd_list->SetComputeRoot32BitConstants(i, consts->len, (void*) consts->ptr, 0);
             } break;
 
             case RootArgument::Tag::RootDescriptorTable: {
-                DescriptorTable* dt = arg->descriptor_table();
+                DescriptorTable* dt = arg._descriptor_table;
                 D3D12_GPU_DESCRIPTOR_HANDLE dt_base = CD3DX12_GPU_DESCRIPTOR_HANDLE(
                     descriptor_heap->GetGPUDescriptorHandleForHeapStart(),
                     dt->offset_into_heap * g_descriptor_size
@@ -253,92 +264,89 @@ void Fence::wait(ID3D12CommandQueue* cmd_queue, Fence* fence, UINT64 value) {
     }
 }
 
-// Device::Descriptor methods
+// Descriptor methods
 
 // constructors
-Descriptor Descriptor::make_cbv(ID3D12Resource* resource, D3D12_CONSTANT_BUFFER_VIEW_DESC desc, LPCWSTR name) {
+Descriptor Descriptor::cbv(ID3D12Resource* resource, D3D12_CONSTANT_BUFFER_VIEW_DESC desc, LPCWSTR name) {
     if (name && resource) resource->SetName(name);
-    Descriptor descriptor = { name, resource, Descriptor::Tag::CbvDescriptor };
+    Descriptor descriptor = { name, resource, Descriptor::Tag::CbvDescriptor, false };
     descriptor._cbv_desc = desc;
     return descriptor;
 }
-Descriptor Descriptor::make_srv(ID3D12Resource* resource, D3D12_SHADER_RESOURCE_VIEW_DESC  desc, LPCWSTR name) {
+Descriptor Descriptor::srv(ID3D12Resource* resource, D3D12_SHADER_RESOURCE_VIEW_DESC  desc, LPCWSTR name) {
     if (name && resource) resource->SetName(name);
-    Descriptor descriptor = { name, resource, Descriptor::Tag::SrvDescriptor };
+    Descriptor descriptor = { name, resource, Descriptor::Tag::SrvDescriptor, false };
     descriptor._srv_desc = desc;
     return descriptor;
 }
-Descriptor Descriptor::make_uav(ID3D12Resource* resource, D3D12_UNORDERED_ACCESS_VIEW_DESC desc, LPCWSTR name) {
+Descriptor Descriptor::uav(ID3D12Resource* resource, D3D12_UNORDERED_ACCESS_VIEW_DESC desc, LPCWSTR name) {
     if (name && resource) resource->SetName(name);
-    Descriptor descriptor = { name, resource, Descriptor::Tag::UavDescriptor };
+    Descriptor descriptor = { name, resource, Descriptor::Tag::UavDescriptor, false };
     descriptor._uav_desc = desc;
     return descriptor;
 }
 
+Descriptor Descriptor::srv_with_default_desc(ID3D12Resource* resource, LPCWSTR name) {
+    if (name && resource) resource->SetName(name);
+    return Descriptor { name, resource, Descriptor::Tag::SrvDescriptor, true };
+}
+Descriptor Descriptor::uav_with_default_desc(ID3D12Resource* resource, LPCWSTR name) {
+    if (name && resource) resource->SetName(name);
+    return Descriptor { name, resource, Descriptor::Tag::UavDescriptor, true };
+}
+
 // getters
 D3D12_CONSTANT_BUFFER_VIEW_DESC&  Descriptor::cbv_desc() {
-    if (this->tag != Descriptor::Tag::CbvDescriptor) abort();
+    if (this->tag != Descriptor::Tag::CbvDescriptor || this->use_default_desc) abort();
     return this->_cbv_desc;
 }
 D3D12_SHADER_RESOURCE_VIEW_DESC&  Descriptor::srv_desc() {
-    if (this->tag != Descriptor::Tag::SrvDescriptor) abort();
+    if (this->tag != Descriptor::Tag::SrvDescriptor || this->use_default_desc) abort();
     return this->_srv_desc;
 }
 D3D12_UNORDERED_ACCESS_VIEW_DESC& Descriptor::uav_desc() {
-    if (this->tag != Descriptor::Tag::UavDescriptor) abort();
+    if (this->tag != Descriptor::Tag::UavDescriptor || this->use_default_desc) abort();
     return this->_uav_desc;
 }
 
-// Device::RootArgument methods
+// DescriptorTable methods
+
+UINT DescriptorTable::offset_after(DescriptorTable* dt) {
+    return dt->offset_into_heap + dt->descriptors.len;
+}
+
+// RootArgument methods
 
 // constructors
-RootArgument RootArgument::make_cbv(ID3D12Resource* cbv, LPCWSTR name) {
-    if (name && cbv) cbv->SetName(name);
+RootArgument RootArgument::not_set(LPCWSTR name) {
+    return RootArgument { name, RootArgument::Tag::NotSet };
+}
+
+RootArgument RootArgument::cbv(ID3D12Resource** cbv, LPCWSTR name) {
+    if (name && cbv && *cbv) (*cbv)->SetName(name);
     RootArgument arg = { name, RootArgument::Tag::RootCbv };
     arg._cbv = cbv;
     return arg;
 }
-RootArgument RootArgument::make_srv(ID3D12Resource* srv, LPCWSTR name) {
-    if (name && srv) srv->SetName(name);
+RootArgument RootArgument::srv(ID3D12Resource** srv, LPCWSTR name) {
+    if (name && srv && *srv) (*srv)->SetName(name);
     RootArgument arg = { name, RootArgument::Tag::RootSrv };
     arg._srv = srv;
     return arg;
 }
-RootArgument RootArgument::make_uav(ID3D12Resource* uav, LPCWSTR name) {
-    if (name && uav) uav->SetName(name);
+RootArgument RootArgument::uav(ID3D12Resource** uav, LPCWSTR name) {
+    if (name && uav && *uav) (*uav)->SetName(name);
     RootArgument arg = { name, RootArgument::Tag::RootUav };
     arg._uav = uav;
     return arg;
 }
-RootArgument RootArgument::make_consts(ArrayView<void> consts, LPCWSTR name) {
+RootArgument RootArgument::consts(ArrayView<void> consts, LPCWSTR name) {
     RootArgument arg = { name, RootArgument::Tag::RootConsts };
     arg._consts = consts;
     return arg;
 }
-RootArgument RootArgument::make_descriptor_table(DescriptorTable* descriptor_table, LPCWSTR name) {
+RootArgument RootArgument::descriptor_table(DescriptorTable* descriptor_table, LPCWSTR name) {
     RootArgument arg = { name, RootArgument::Tag::RootDescriptorTable };
     arg._descriptor_table = descriptor_table;
     return arg;
-}
-
-// getters
-ID3D12Resource*& RootArgument::cbv() {
-    if (this->tag != RootArgument::Tag::RootCbv) abort();
-    return this->_cbv;
-}
-ID3D12Resource*& RootArgument::srv() {
-    if (this->tag != RootArgument::Tag::RootSrv) abort();
-    return this->_srv;
-}
-ID3D12Resource*& RootArgument::uav() {
-    if (this->tag != RootArgument::Tag::RootUav) abort();
-    return this->_uav;
-}
-ArrayView<void>& RootArgument::consts() {
-    if (this->tag != RootArgument::Tag::RootConsts) abort();
-    return this->_consts;
-}
-DescriptorTable*& RootArgument::descriptor_table() {
-    if (this->tag != RootArgument::Tag::RootDescriptorTable) abort();
-    return this->_descriptor_table;
 }

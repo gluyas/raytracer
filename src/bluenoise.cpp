@@ -136,7 +136,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = sizeof(Vertex);
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_NONE;
 
-        vertices = Descriptor::make_srv(buffer, desc, L"vertices");
+        vertices = Descriptor::srv(buffer, desc, L"vertices");
         array_push(&resources, vertices.resource);
     }
 
@@ -149,7 +149,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = 0;
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_RAW;
 
-        indices = Descriptor::make_srv(buffer, desc, L"indices");
+        indices = Descriptor::srv(buffer, desc, L"indices");
         array_push(&resources, indices.resource);
     }
 
@@ -162,7 +162,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = 0;
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_NONE;
 
-        partial_surface_areas = Descriptor::make_srv(buffer, desc, L"partial_surface_areas");
+        partial_surface_areas = Descriptor::srv(buffer, desc, L"partial_surface_areas");
         array_push(&resources, partial_surface_areas.resource);
     }
 
@@ -180,7 +180,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = sizeof(InitialSamplePoint);
         desc.Buffer.NumElements         = initial_sample_points_count;
 
-        initial_sample_points = Descriptor::make_uav(buffer, desc, L"initial_sample_points");
+        initial_sample_points = Descriptor::uav(buffer, desc, L"initial_sample_points");
         array_push(&resources, initial_sample_points.resource);
     }
 
@@ -191,7 +191,7 @@ UINT generate_sample_points(
         desc.Buffer.StructureByteStride = sizeof(HashtableBucket);
         desc.Buffer.NumElements         = g.hashtable_buckets_count;
 
-        hashtable = Descriptor::make_uav(buffer, desc, L"hashtable");
+        hashtable = Descriptor::uav(buffer, desc, L"hashtable");
         array_push(&resources, hashtable.resource);
     }
 
@@ -209,31 +209,23 @@ UINT generate_sample_points(
 
     // shader root arguments
     // ComputeGlobals g declared and initialized in mesh preprocessing step
-    RootArgument globals = RootArgument::make_cbv(create_buffer(sizeof(ComputeGlobals), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD));
-    copy_to_upload_buffer(globals.cbv(), array_of(&g));
-    array_push(&resources, globals.cbv());
+    ID3D12Resource* globals_buffer = create_buffer(sizeof(ComputeGlobals), D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+    copy_to_upload_buffer(globals_buffer, array_of(&g));
+    array_push(&resources, globals_buffer);
 
     ComputeOutput out = {};
-    RootArgument output = RootArgument::make_uav(create_buffer(sizeof(ComputeOutput), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT));
-    ID3D12Resource* output_readback_buffer = create_buffer(sizeof(ComputeOutput),  D3D12_RESOURCE_STATE_COPY_DEST, D3D12_HEAP_TYPE_READBACK);
-    array_push(&resources, output.uav());
+    ID3D12Resource* output_buffer          = create_buffer(sizeof(ComputeOutput), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_HEAP_TYPE_DEFAULT);
+    ID3D12Resource* output_readback_buffer = create_buffer(sizeof(ComputeOutput), D3D12_RESOURCE_STATE_COPY_DEST, D3D12_HEAP_TYPE_READBACK);
+    array_push(&resources, output_buffer);
     array_push(&resources, output_readback_buffer);
 
-    SortConstants sort = {};
-    RootArgument sort_args = RootArgument::make_consts(array_of(&sort));
-
-    SampleGenConstants sample_gen = {};
-    RootArgument sample_gen_args = RootArgument::make_consts(array_of(&sample_gen));
-
-    RootArgument descriptor_table_root_argument = RootArgument::make_descriptor_table(&descriptor_table);
-
     // root argument layout
-    RootArgument* root_arguments[] = {
-        NULL, // reserve for sort_args and sample_gen_args
-        &globals,
-        &output,
-        &descriptor_table_root_argument,
-        NULL // reserve for sample_points
+    RootArgument root_arguments[] = {
+        RootArgument::not_set(), // reserve for sort_args and sample_gen_args
+        RootArgument::cbv(&globals_buffer, L"globals"),
+        RootArgument::uav(&output_buffer, L"output"),
+        RootArgument::descriptor_table(&descriptor_table),
+        RootArgument::not_set() // reserve for sample_points
     };
 
     // DISPATCH INITIALIZATION KERNELS
@@ -248,7 +240,8 @@ UINT generate_sample_points(
 
     // sort_initial_sample_points
     cmd_list->SetPipelineState(g_sort_initial_sample_points_pso);
-    root_arguments[0] = &sort_args;
+    SortConstants sort = {};
+    root_arguments[0] = RootArgument::consts(array_of(&sort), L"sort");
 
     sort.block_size = 1;
     while (sort.block_size < initial_sample_points_count) {
@@ -262,14 +255,14 @@ UINT generate_sample_points(
             cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(initial_sample_points.resource));
         } while (sort.pair_offset > 1);
     }
-    root_arguments[0] = NULL;
+    root_arguments[0] = RootArgument::not_set();
 
     // build_hashtable
     cmd_list->SetPipelineState(g_build_hashtable_pso);
     cmd_list->Dispatch(initial_sample_points_count, 1, 1);
 
     // execute initialization
-    read_from_buffer(cmd_list, output.uav(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &output_readback_buffer);
+    read_from_buffer(cmd_list, output_buffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &output_readback_buffer);
     CHECK_RESULT(cmd_list->Close());
     g_cmd_queue->ExecuteCommandLists(1, (ID3D12CommandList**) &cmd_list);
 
@@ -287,21 +280,20 @@ UINT generate_sample_points(
     for (UINT i = 0; i < 24; i++) phase_sequence[i] = i;
     for (UINT i = 0; i < 24; i++) swap(&phase_sequence[rand() % (24-i)], &phase_sequence[23-i]);
 
-    // allocate sample points buffer in out parameter and set root argument
+    // update globals
     g.sample_points_capacity = out.hashtable_entry_count;
-    copy_to_upload_buffer(globals.cbv(), array_of(&g));
+    copy_to_upload_buffer(globals_buffer, array_of(&g));
 
-    *sample_points_buffer = create_buffer(g.sample_points_capacity*sizeof(SamplePoint), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
-    RootArgument sample_points = RootArgument::make_uav(*sample_points_buffer, L"sample_points");
-    root_arguments[4] = &sample_points;
-
-    root_arguments[0] = &sample_gen_args;
-
-    // compare generated sample points between each iteration
+    // allocate sample_points_buffer
     UINT sample_points_count = 0;
+    *sample_points_buffer = create_buffer(g.sample_points_capacity*sizeof(SamplePoint), D3D12_RESOURCE_STATE_UNORDERED_ACCESS);
+    root_arguments[4] = RootArgument::uav(sample_points_buffer, L"sample_points");
 
     // prepare trials and phase groups for sample point generation
+    SampleGenConstants sample_gen = {};
+    root_arguments[0] = RootArgument::consts(array_of(&sample_gen), L"sample_points");
     sample_gen.trial_index = 0;
+
     while (true) { // generate_sample_points
         CHECK_RESULT(cmd_list->Reset(g_cmd_allocator, g_generate_sample_points_pso));
         cmd_list->SetComputeRootSignature(g_root_signature);
@@ -314,7 +306,7 @@ UINT generate_sample_points(
             cmd_list->Dispatch((g.grid_dimensions.x+2)/3, (g.grid_dimensions.y+2)/3, (g.grid_dimensions.z+2)/3);
             cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::UAV(hashtable.resource));
         }
-        read_from_buffer(cmd_list, output.uav(), D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &output_readback_buffer);
+        read_from_buffer(cmd_list, output_buffer, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, &output_readback_buffer);
 
         CHECK_RESULT(cmd_list->Close());
         g_cmd_queue->ExecuteCommandLists(1, (ID3D12CommandList**) &cmd_list);

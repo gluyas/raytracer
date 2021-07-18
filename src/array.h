@@ -20,6 +20,10 @@ struct ArrayView {
         return this->ptr[array_index(this->len, index)];
     }
 
+    inline bool operator !() {
+        return !(this->ptr && this->len);
+    }
+
     inline operator ArrayView<void>() {
         return array_from((void*) this->ptr, array_len_in_bytes(this));
     }
@@ -47,6 +51,10 @@ struct ArrayView<void> {
 
     inline void* get(ptrdiff_t index) {
         return this->offset(array_index(this->len, index));
+    }
+
+    inline bool operator !() {
+        return !(this->ptr && this->len);
     }
 
     template<typename T>

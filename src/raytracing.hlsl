@@ -5,23 +5,25 @@
 // SHADER RESOURCES
 
 GlobalRootSignature global_root_signature = {
-    "DescriptorTable(UAV(u0, numDescriptors = 3))," // 0: { g_render_target, g_sample_accumulator, g_translucent_samples }
-    "CBV(b0)," // 1: g
-    "SRV(t0)," // 2: g_scene
+    "CBV(b0),"                                      // 0: g
+    "DescriptorTable(UAV(u0, numDescriptors = 2))," // 1: { g_render_target, g_sample_accumulator }
+    "SRV(t0),"                                      // 2: g_scene
     "DescriptorTable(SRV(t1, numDescriptors = 2))," // 3: { g_vertices, g_indices }
+    "DescriptorTable(UAV(u2), SRV(t3)),"            // 4: { g_translucent_samples, g_translucent_tabulated_bssrdf }
 };
 
 RWTexture2D<float4> g_render_target       : register(u0);
 RWTexture2D<float4> g_sample_accumulator  : register(u1);
-
-// TODO: optimized data structure
-RWStructuredBuffer<SamplePoint> g_translucent_samples : register(u2);
 
 ConstantBuffer<RaytracingGlobals> g : register(b0);
 
 RaytracingAccelerationStructure g_scene    : register(t0);
 StructuredBuffer<Vertex>        g_vertices : register(t1);
 ByteAddressBuffer               g_indices  : register(t2);
+
+// TODO: optimized data structure
+RWStructuredBuffer<SamplePoint> g_translucent_samples           : register(u2);
+Buffer<float4>                  g_translucent_tabulated_bssrdf  : register(t3); // { xyz: 3-channel bssrdf evaluation, w: squared radius parameter }
 
 inline float3 get_world_space_normal(uint3 triangle_indices, float2 barycentrics) {
     float3 normal;
@@ -214,6 +216,46 @@ TriangleHitGroup translucent_hit_group = {
     "translucent_chit"
 };
 
+float3 eval_bssrdf_tabulated(float radius) {
+    float f = radius / g.translucent_tabulated_bssrdf_stepsize;
+    uint  i = ceil(max(0, f));
+    if (i > g.translucent_tabulated_bssrdf_count) return 0;
+
+    float3 r1;
+    if (i == g.translucent_tabulated_bssrdf_count) r1 = 0;
+    else                                           r1 = g_translucent_tabulated_bssrdf[i].xyz;
+
+    if (i == 0) return r1;
+    float3 r0 = g_translucent_tabulated_bssrdf[i-1].xyz;
+
+    return lerp(r0, r1, f - float(i-1));
+}
+
+float3 eval_bssrdf_dipole(float radius2) {
+    float attenuation           = g.translucent_scattering + g.translucent_absorption;
+    float mean_free_path        = 1 / attenuation;
+    float albedo                = g.translucent_scattering / attenuation;
+    float effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
+
+    float eta             = g.translucent_refraction;
+    float diffuse_fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta; // diffuse fresnel, not fresnel reflectance?
+
+    // subsurface diffuse light source
+    float z_real    = mean_free_path;
+    float d_real    = sqrt(radius2 + z_real*z_real);
+    float c_real    = z_real * (effective_attenuation + 1/d_real);
+
+    // virtual light source above surface
+    float z_virtual = mean_free_path * (1 + 1.25*(1 + diffuse_fresnel)/(1 - diffuse_fresnel));
+    float d_virtual = sqrt(radius2 + z_virtual*z_virtual);
+    float c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
+
+    // combine real and virtual contributions
+    float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
+    float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
+    return max(0, albedo/(2*TAU) * (m_real + m_virtual));
+}
+
 void debug_draw_translucent_samples(inout RayPayload payload, Attributes attr);
 
 [shader("closesthit")]
@@ -225,33 +267,15 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
 
     float3 diffuse_exitance = 0;
     if (g.translucent_samples_count) {
-        float attenuation           = g.translucent_scattering + g.translucent_absorption;
-        float mean_free_path        = 1 / attenuation;
-        float albedo                = g.translucent_scattering / attenuation;
-        float effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
-
-        float eta             = g.translucent_refraction;
-        float diffuse_fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta; // diffuse fresnel, not fresnel reflectance?
-
         for (int i = 0; i < g.translucent_samples_count; i++) {
             SamplePoint sample_point = g_translucent_samples[i];
-            float3 offset  = sample_point.position - hit_point;
-            float  radius2 = dot(offset, offset);
 
-            // subsurface diffuse light source
-            float z_real    = mean_free_path;
-            float d_real    = sqrt(radius2 + z_real*z_real);
-            float c_real    = z_real * (effective_attenuation + 1/d_real);
+            float radius2 = length2(sample_point.position - hit_point);
+            float3 bssrdf;
+            if (g.translucent_tabulated_bssrdf_count) bssrdf = eval_bssrdf_tabulated(sqrt(radius2));
+            else                                      bssrdf = eval_bssrdf_dipole(radius2);
 
-            // virtual light source above surface
-            float z_virtual = mean_free_path * (1 + 1.25*(1 + diffuse_fresnel)/(1 - diffuse_fresnel));
-            float d_virtual = sqrt(radius2 + z_virtual*z_virtual);
-            float c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
-
-            // combine real and virtual contributions
-            float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
-            float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
-            diffuse_exitance += max(0, albedo/(2*TAU) * (m_real + m_virtual) * sample_point.payload);
+            diffuse_exitance += bssrdf * sample_point.payload;
         }
         diffuse_exitance /= g.translucent_samples_count;
     }
@@ -290,7 +314,8 @@ void debug_draw_translucent_samples(inout RayPayload payload, Attributes attr) {
         float3 d = sample_point.position - hit;
         if (dot(d, d) <= rejection_radius*rejection_radius*0.25) {
         // if (dot(d, d) <= 0.000001) {
-            payload.emission = 1;
+            // payload.emission = 1;
+            payload.emission = abs(sample_point.payload);
             // payload.emission = length(payload.emission) > 0.5*sqrt(2)? 0 : 1;
             return;
         }
