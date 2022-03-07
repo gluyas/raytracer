@@ -48,7 +48,7 @@ cl ^
     -Zi -EHsc ^
     -Foout\ -Fdout\ -Feout\raytracer ^
     ^
-    -Ilib -Ilib\imgui -Ilib\DirectXMath -I. ^
+    -Ilib -Ilib\imgui -I. ^
     -DCPP -DUNICODE -DDEBUG^
     src\geometry.cpp src\parse_obj.cpp src\bluenoise.cpp src\device.cpp src\main.cpp ^
     ^
