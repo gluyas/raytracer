@@ -47,6 +47,8 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 #ifdef CPP
 
+#define PIXEL_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
+
 #define COMMON_FLOAT    float
 #define COMMON_FLOAT2   XMFLOAT2
 #define COMMON_FLOAT3   XMFLOAT3
@@ -62,6 +64,8 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 #define COMMON_UINT4    XMUINT4
 
 typedef UINT16 Index;
+#define INDEX_MAX    USHRT_MAX
+#define INDEX_FORMAT DXGI_FORMAT_R16_UINT
 
 #endif
 #ifdef HLSL
@@ -93,7 +97,7 @@ struct Vertex {
 
 struct SamplePoint {
     COMMON_FLOAT3 position;
-    COMMON_FLOAT3 payload;
+    COMMON_FLOAT3 payload; // incident flux
 };
 
 struct RaytracingGlobals {
@@ -106,32 +110,45 @@ struct RaytracingGlobals {
     COMMON_FLOAT    camera_aspect;
     COMMON_FLOAT    camera_focal_length;
 
-    COMMON_UINT     translucent_samples_count;
+    // translucent
+    COMMON_UINT     translucent_accumulator_count;
+    COMMON_UINT     translucent_instance_stride;
+
+    COMMON_FLOAT    translucent_refractive_index;
+
+    // tabulated
+    COMMON_FLOAT    translucent_bssrdf_scale;
 
     // dipole model
     COMMON_FLOAT    translucent_scattering;
     COMMON_FLOAT    translucent_absorption;
-    COMMON_FLOAT    translucent_refraction;
-
-    // tabulated
-    COMMON_UINT     translucent_tabulated_bssrdf_count;
-    COMMON_FLOAT    translucent_tabulated_bssrdf_stepsize;
 };
 
 struct RaytracingLocals {
-    COMMON_UINT   primitive_index_offset;
     COMMON_FLOAT3 color;
+    COMMON_INT    translucent_id;
+};
+
+struct TranslucentProperties {
+    COMMON_FLOAT samples_mean_area;
 };
 
 // HELPER FUNCTIONS
 
 #ifdef CPP
 
+namespace Prelude {
+
 template<typename T>
 inline void swap(T* a, T* b) {
     T temp = *a;
     *a = *b;
     *b = temp;
+}
+
+template<typename T>
+inline bool equals(T* a, T* b) {
+    return memcmp(a, b, sizeof(T)) == 0;
 }
 
 inline float clamp(float x, float a, float b) {
@@ -146,6 +163,8 @@ inline UINT64 round_up(UINT64 x, UINT64 d) {
 inline UINT64 ensure_unsigned(UINT64 x) {
     return static_cast<UINT64>(max(static_cast<INT64>(x), 0));
 }
+
+} // namespace Raytracer
 
 // winapi/d3d12 helpers
 // TODO: nicer error handling
@@ -182,6 +201,17 @@ inline uint3 load_3x16bit_indices(uniform ByteAddressBuffer index_buffer, uint p
         indices.z = (four_indices.y >> 16) & 0xffff;
     }
     return indices;
+}
+
+float3 hsv(float3 hsv) {
+    // https://gist.github.com/iUltimateLP/5129149bf82757b31542
+    float4 k = float4(1.0, 2.0 / 3.0, 1.0 / 3.0, 3.0);
+    float3 p = abs(frac(hsv.xxx + k.xyz) * 6.0 - k.www);
+
+    return hsv.z * lerp(k.xxx, saturate(p - k.xxx), hsv.y);
+}
+float3 hsv(float h, float s, float v) {
+    return hsv(float3(h, s, v));
 }
 
 // primitive helpers
@@ -235,7 +265,12 @@ inline float2 get_barycentrics(Vertex verts[3], float3 position) {
 
 // LOCAL HEADERS
 
+
 #ifdef CPP
+
+using namespace Prelude;
+
+#include "tuple.h"
 #include "array.h"
 #include "geometry.h"
 #endif

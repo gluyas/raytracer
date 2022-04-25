@@ -25,7 +25,7 @@ end:
     return i;
 }
 
-void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb) {
+void parse_obj_file(const char* filename, bool swap_yz, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb) {
     FILE* file = fopen(filename, "rb");
 
     const UINT64 char_buf_len = 512;
@@ -54,6 +54,7 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
                 XMFLOAT3 v;
 
                 assert(parse_floats(&substr, 3, (float*) &v) == 3);
+                if (swap_yz) swap(&v.y, &v.z);
                 if (aabb) {
                     *aabb = aabb_join(*aabb, XMLoadFloat3(&v));
                 }
@@ -70,6 +71,7 @@ void parse_obj_file(const char* filename, Array<Vertex>* vertices, Array<Index>*
                 // normal
                 XMFLOAT3 vn;
                 assert(parse_floats(&substr, 3, (float*) &vn) == 3);
+                if (swap_yz) swap(&vn.y, &vn.z);
                 array_push(&vns, vn);
             }
         } else if (substr[0] == 'f') {

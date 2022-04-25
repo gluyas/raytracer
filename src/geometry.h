@@ -23,3 +23,6 @@ struct Aabb {
 Aabb aabb_join(Aabb a, XMVECTOR v);
 Aabb aabb_join(Aabb a, Aabb b);
 Aabb aabb_join(Aabb a, Triangle t);
+
+XMVECTOR aabb_size(Aabb a);
+float    aabb_widest(Aabb a);

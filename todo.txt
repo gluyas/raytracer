@@ -1,7 +1,9 @@
-organise global state
+combine separate per-translucent buffers into single resource
+    move sample point descriptor arrays into single descriptors
+reuse very large bluenoise buffers
+profile bluenoise generation
 
-raytracing geometry build procedures
-better handling of multiple geometries
+concurrent work submission
 
 consistent error/debug logging
 

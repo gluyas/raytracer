@@ -11,6 +11,7 @@
 //     g_initial_sample_points, g_hashtable
 // }
 // 4: g_sample_points
+// 5: g_point_normals
 #define ROOT_SIG "RootFlags(0)," \
     "RootConstants(num32BitConstants=2, b0)," \
     "CBV(b1)," \
@@ -19,7 +20,8 @@
         "SRV(t0, numDescriptors = 3)," \
         "UAV(u1, numDescriptors = 2)" \
     ")," \
-    "UAV(u3)"
+    "UAV(u3)," \
+    "UAV(u4)"
 
 ConstantBuffer<SortConstants>      g_sort       : register(b0);
 ConstantBuffer<SampleGenConstants> g_sample_gen : register(b0);
@@ -37,6 +39,7 @@ RWStructuredBuffer<InitialSamplePoint> g_initial_sample_points : register(u1);
 RWStructuredBuffer<HashtableBucket> g_hashtable : register(u2);
 
 RWStructuredBuffer<SamplePoint> g_sample_points : register(u3);
+RWStructuredBuffer<float3>      g_point_normals : register(u4);
 
 uint hash_from_cell_id(uint cell_id) {
     return cell_id % g.hashtable_buckets_count;
@@ -78,7 +81,7 @@ void generate_initial_sample_points(uint3 index : SV_DispatchThreadID) {
     sample_point.triangle_id = min_index;
 
     // pick uniform random point on triangle surface
-    Vertex vertices[3] = load_triangle_vertices(g_vertices, load_3x16bit_indices(g_indices, sample_point.triangle_id));
+    Vertex vertices[3] = load_triangle_vertices(g_vertices, load_3x16bit_indices(g_indices, g.indices_offset/3 + sample_point.triangle_id));
     float3 p0 = vertices[0].position;
     float3 p1 = vertices[1].position;
     float3 p2 = vertices[2].position;
@@ -217,21 +220,26 @@ void generate_sample_points(uint3 id : SV_DispatchThreadID) {
                 }
             }
         }
-        // create new sample point
-        SamplePoint sample_point;
-        sample_point.position = trial.position;
-
-        // update hashtable with sample position for neighbouring phase groups
-        entry.selected_sample_position = sample_point.position;
-        g_hashtable[hash].entries[bucket_index] = entry;
-
-        // calculate normal and store in payload
-        Vertex triangle_verts[3] = load_triangle_vertices(g_vertices, load_3x16bit_indices(g_indices, trial.triangle_id));
-        sample_point.payload = get_interpolated_normal(triangle_verts, get_barycentrics(triangle_verts, sample_point.position));
-
+        // commit new sample point
         uint sample_point_index;
         InterlockedAdd(g_out[0].sample_points_count, 1, sample_point_index);
         if (sample_point_index >= g.sample_points_capacity) return;
+
+        // update hashtable with sample position for neighbouring phase groups (in subsequent dispatches)
+        entry.selected_sample_position = trial.position;
+        g_hashtable[hash].entries[bucket_index] = entry;
+
+        // create new sample point with world space coordinates and empty payload
+        SamplePoint sample_point;
+        sample_point.position = mul(float4(trial.position, 1), g.transform).xyz;
+        sample_point.payload  = 0;
         g_sample_points[sample_point_index] = sample_point;
+
+        // store world space normal in normals buffer
+        Vertex triangle_verts[3] = load_triangle_vertices(g_vertices, load_3x16bit_indices(g_indices, g.indices_offset/3 + trial.triangle_id));
+        float3 normal;
+        normal = get_interpolated_normal(triangle_verts, get_barycentrics(triangle_verts, trial.position));
+        normal = normalize(mul(float4(normal, 0), g.transform)).xyz;
+        g_point_normals[sample_point_index] = normal;
     }
 }

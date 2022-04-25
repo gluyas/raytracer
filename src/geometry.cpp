@@ -49,3 +49,13 @@ Aabb aabb_join(Aabb a, Triangle t) {
     a = aabb_join(a, t.c);
     return a;
 }
+
+XMVECTOR aabb_size(Aabb a) {
+    return a.max - a.min;
+}
+
+float aabb_widest(Aabb a) {
+    XMFLOAT3 size;
+    XMStoreFloat3(&size, aabb_size(a));
+    return fmax(fmax(size.x, size.y), size.z);
+}
