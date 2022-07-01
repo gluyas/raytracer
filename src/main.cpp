@@ -411,6 +411,7 @@ int WINAPI wWinMain(
     Raytracing::g_globals.bounces_per_sample = 4;
 
     Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
+    Raytracing::g_globals.translucent_bssrdf_fudge = 1.0;
     Raytracing::g_globals.translucent_refractive_index = 1.5;
     Raytracing::g_globals.translucent_scattering = 15.0;
     Raytracing::g_globals.translucent_absorption = 0.1;
@@ -525,7 +526,9 @@ int WINAPI wWinMain(
 
             if (Raytracing::g_globals.translucent_bssrdf_scale != 0) {
                 // tabulated
-                g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf radius##translucent", &Raytracing::g_globals.translucent_bssrdf_scale, 0.001, 2.0, "%.3f", ImGuiSliderFlags_AlwaysClamp);
+                g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf radius##translucent", &Raytracing::g_globals.translucent_bssrdf_scale, 0.001, 100, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
+                g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf fudge##translucent", &Raytracing::g_globals.translucent_bssrdf_fudge, 0.0, 10000, "%.3f", ImGuiSliderFlags_Logarithmic);
+                Raytracing::g_globals.translucent_bssrdf_scale = max(FLT_EPSILON, Raytracing::g_globals.translucent_bssrdf_scale);
                 scale = Raytracing::g_globals.translucent_bssrdf_scale;
             } else {
                 // dipole
@@ -537,7 +540,7 @@ int WINAPI wWinMain(
         { // sample points
             ImGui::Separator();
             ImGui::Text("translucent samples"); ImGui::SameLine();
-            ImGui::Checkbox("enabled##sample_points", &Raytracing::g_enable_translucent_sample_collection);
+            g_do_reset_accumulator |= ImGui::Checkbox("enabled##sample_points", &Raytracing::g_enable_translucent_sample_collection);
 
             static float sample_point_radius = g_do_regenerate_translucent_samples;
             ImGui::SliderFloat("radius##sample_points", &sample_point_radius, 0.005, 0.5, "%.3f", ImGuiSliderFlags_Logarithmic);

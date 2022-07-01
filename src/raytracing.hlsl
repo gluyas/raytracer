@@ -262,7 +262,8 @@ TriangleHitGroup translucent_hit_group = {
 
 inline float3 eval_bssrdf_tabulated(TranslucentProperties translucent, float radius) {
     float z = g.translucent_bssrdf_scale*g.translucent_bssrdf_scale;
-    return g_translucent_bssrdf.SampleLevel(BssrdfSampler, radius / g.translucent_bssrdf_scale, 0) / z;
+    float s = g.translucent_bssrdf_fudge;
+    return s * g_translucent_bssrdf.SampleLevel(BssrdfSampler, radius / g.translucent_bssrdf_scale, 0) / z;
 }
 
 inline float3 eval_bssrdf_dipole(TranslucentProperties translucent, float radius) {

@@ -33,7 +33,7 @@ ID3D12Resource* g_sample_accumulator = NULL;
 
 ID3D12Resource* g_scene = NULL;
 
-const UINT g_bssrdf_tabulations = 128;
+UINT g_bssrdf_tabulations = 0;
 ID3D12Resource* g_bssrdf = NULL;
 
 Array<ShaderRecord> g_shader_table = {};
@@ -109,13 +109,25 @@ void init(ID3D12GraphicsCommandList* cmd_list) {
     g_globals_upload = create_buffer(sizeof(RaytracingGlobals), D3D12_RESOURCE_STATE_GENERIC_READ,                                                                D3D12_HEAP_TYPE_UPLOAD);
 
     { // g_bssrdf
+        #include "data/skin_0.h"
+        g_bssrdf_tabulations = round_up(data_len, D3D12_TEXTURE_DATA_PITCH_ALIGNMENT);
+
         Array<XMFLOAT3> bssrdf = array_init<XMFLOAT3>(g_bssrdf_tabulations);
-        for (UINT i = 0; i < g_bssrdf_tabulations; i++) {
-            XMVECTOR v = XMVectorReplicate(1.0 - i / (float) (g_bssrdf_tabulations-1));
-            v *= v; v *= v;
-            v /= 0.209439510239;
-            XMStoreFloat3(array_push_uninitialized(&bssrdf), v);
+        for (UINT i = 0; i < data_len; i++) {
+            XMFLOAT3 entry;
+            entry.x = data_l[i]; // r
+            entry.y = data_m[i]; // g
+            entry.z = data_s[i]; // b
+            array_push(&bssrdf, entry);
         }
+        for (UINT i = data_len; i < g_bssrdf_tabulations; i++) array_push_default(&bssrdf);
+
+        // for (UINT i = 0; i < g_bssrdf_tabulations; i++) {
+        //     XMVECTOR v = XMVectorReplicate(1.0 - i / (float) (g_bssrdf_tabulations-1));
+        //     v *= v; v *= v;
+        //     v /= 0.209439510239;
+        //     XMStoreFloat3(array_push_uninitialized(&bssrdf), v);
+        // }
 
         D3D12_PLACED_SUBRESOURCE_FOOTPRINT bssrdf_footprint = {};
         bssrdf_footprint.Footprint.Format = DXGI_FORMAT_R32G32B32_FLOAT;

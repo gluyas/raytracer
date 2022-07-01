@@ -118,6 +118,7 @@ struct RaytracingGlobals {
 
     // tabulated
     COMMON_FLOAT    translucent_bssrdf_scale;
+    COMMON_FLOAT    translucent_bssrdf_fudge;
 
     // dipole model
     COMMON_FLOAT    translucent_scattering;
