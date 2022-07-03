@@ -13,6 +13,8 @@
 #include <string.h>
 #include <time.h>
 
+#include <immintrin.h>
+
 #include <windows.h>
 
 #include <d3d12.h>
