@@ -291,8 +291,8 @@ inline void array_concat(Array<T>* array, const ArrayView<T>* other) {
 }
 
 template<typename T>
-inline void array_reserve(Array<T>* array, size_t additional_cap) {
-    size_t new_len = array->len + additional_cap;
+inline void array_reserve(Array<T>* array, size_t additional_len) {
+    size_t new_len = array->len + additional_len;
     if (new_len <= array->cap) return;
 
     // TODO: use lzcnt

@@ -1,7 +1,7 @@
 #pragma once
 #include "prelude.h"
 
-struct RawBssrdf {
+struct SpectralBssrdf {
     // row: radius
     UINT  radii;
     UINT  radii_pitch;
@@ -18,7 +18,7 @@ struct RawBssrdf {
 
 namespace Bssrdf {
 
-RawBssrdf get_default_bssrdf();
-Array<XMFLOAT3> generate_texture(RawBssrdf raw);
+SpectralBssrdf get_default_bssrdf();
+Array<XMFLOAT3> generate_texture(SpectralBssrdf raw);
 
 } // namespace Bssrdf

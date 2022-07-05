@@ -13,7 +13,7 @@
 #include <string.h>
 #include <time.h>
 
-#include <immintrin.h>
+#include <intrin.h>
 
 #include <windows.h>
 
