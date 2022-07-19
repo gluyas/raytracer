@@ -483,25 +483,29 @@ int WINAPI wWinMain(
             static float azimuth   = 0;
             static float elevation = 0;
             static float distance  = 2;
+            static float target[3] = {};
             static float fov_x     = 70*DEGREES;
             static float fov_y     = fov_x / g_aspect;
 
-            g_do_reset_accumulator |= ImGui::SliderAngle("azimuth",   &azimuth);
+            g_do_reset_accumulator |= ImGui::SliderAngle("azimuth##camera",   &azimuth);
             azimuth += mouse_drag.x * TAU/2;
             azimuth = fmod(azimuth + 3*TAU/2, TAU) - TAU/2;
 
-            g_do_reset_accumulator |= ImGui::SliderAngle("elevation", &elevation, -85, 85);
+            g_do_reset_accumulator |= ImGui::SliderAngle("elevation##camera", &elevation, -85, 85);
             elevation -= mouse_drag.y * TAU/2;
             elevation = clamp(elevation, -85*DEGREES, 85*DEGREES);
 
-            g_do_reset_accumulator |= ImGui::DragFloat("distance", &distance, distance*0.005, 0.001, FLT_MAX);
+            g_do_reset_accumulator |= ImGui::DragFloat("distance##camera", &distance, distance*0.005, 0.001, FLT_MAX);
             distance -= mouse_scroll*distance*0.05;
             distance = clamp(distance, 0.005, INFINITY);
 
-            if (ImGui::SliderAngle("fov x", &fov_x, 5,          175))          { fov_y = fov_x / g_aspect; g_do_reset_accumulator = true; }
-            if (ImGui::SliderAngle("fov y", &fov_y, 5/g_aspect, 175/g_aspect)) { fov_x = fov_y * g_aspect; g_do_reset_accumulator = true; }
+            g_do_reset_accumulator |= ImGui::SliderFloat3("focus##camera", target, -1, 1);
 
-            XMVECTOR camera_pos = XMVectorSet(
+            if (ImGui::SliderAngle("fov x##camera", &fov_x, 5,          175))          { fov_y = fov_x / g_aspect; g_do_reset_accumulator = true; }
+            if (ImGui::SliderAngle("fov y##camera", &fov_y, 5/g_aspect, 175/g_aspect)) { fov_x = fov_y * g_aspect; g_do_reset_accumulator = true; }
+
+            XMVECTOR focus = XMLoadFloat3((XMFLOAT3*) target);
+            XMVECTOR camera_pos = focus + XMVectorSet(
                 -sinf(azimuth) * cosf(elevation) * distance,
                 -cosf(azimuth) * cosf(elevation) * distance,
                                  sinf(elevation) * distance,
@@ -509,7 +513,7 @@ int WINAPI wWinMain(
             );
             Raytracing::g_globals.camera_aspect = g_aspect;
             Raytracing::g_globals.camera_focal_length = 1 / tanf(fov_y/2);
-            XMMATRIX view = XMMatrixLookAtRH(camera_pos, g_XMZero, g_XMIdentityR2);
+            XMMATRIX view = XMMatrixLookAtRH(camera_pos, focus, g_XMIdentityR2);
             XMStoreFloat4x4(&Raytracing::g_globals.camera_to_world, XMMatrixInverse(NULL, view));
         }
 

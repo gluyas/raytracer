@@ -650,9 +650,9 @@ UINT generate_translucent_samples(ID3D12GraphicsCommandList4* cmd_list, float ra
 }
 
 void dispatch_rays(ID3D12GraphicsCommandList4* cmd_list) {
-    UINT translucent_accumulator_count = g_globals.translucent_accumulator_count;
+    float translucent_bssrdf_fudge = g_globals.translucent_bssrdf_fudge;
     if (!g_enable_subsurface_scattering) {
-        g_globals.translucent_accumulator_count = 0;
+        g_globals.translucent_bssrdf_fudge = 0;
     }
 
     cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_globals_buffer, D3D12_RESOURCE_STATE_VERTEX_AND_CONSTANT_BUFFER | D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, D3D12_RESOURCE_STATE_COPY_DEST));
@@ -724,7 +724,8 @@ void dispatch_rays(ID3D12GraphicsCommandList4* cmd_list) {
     if (post_copy_barriers.len) cmd_list->ResourceBarrier(post_copy_barriers.len, post_copy_barriers.ptr);
 
     g_globals.accumulator_count             += 1;
-    g_globals.translucent_accumulator_count = translucent_accumulator_count + g_enable_translucent_sample_collection;
+    g_globals.translucent_accumulator_count += g_enable_translucent_sample_collection;
+    g_globals.translucent_bssrdf_fudge = translucent_bssrdf_fudge;
 }
 
 } // namespace Raytracing

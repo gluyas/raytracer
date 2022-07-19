@@ -144,6 +144,7 @@ void camera_rgen() {
 
         accumulated_samples += trace_path_sample(rng, ray);
     }
+    accumulated_samples /= g.samples_per_pixel;
     // add previous frames' samples
     if (g.accumulator_count != 0) {
         // TODO: prevent floating-point accumulators from growing too large
@@ -151,9 +152,7 @@ void camera_rgen() {
     }
 
     // calculate final pixel colour and write output values
-    // TODO: better gamma-correction
-    float4 pixel_color = sqrt(accumulated_samples / (g.accumulator_count+g.samples_per_pixel));
-    g_render_target     [DispatchRaysIndex().xy] = pixel_color;
+    g_render_target     [DispatchRaysIndex().xy] = sqrt(accumulated_samples / (g.accumulator_count+1)); // TODO: better gamma-correction
     g_sample_accumulator[DispatchRaysIndex().xy] = accumulated_samples;
 }
 
@@ -310,7 +309,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
     float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 
     float3 diffuse_irradiance = 0;
-    if (g.translucent_accumulator_count) {
+    if (g.translucent_accumulator_count && g.translucent_bssrdf_fudge) {
         for (int i = 0; i < samples_count; i++) {
             SamplePoint sample_point = samples[i];
             float radius = length(sample_point.position - hit_point);
