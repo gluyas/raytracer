@@ -350,7 +350,7 @@ int WINAPI wWinMain(
         XMMATRIX transform = XMMatrixAffineTransformation(
             XMVectorReplicate(scale),
             g_XMZero, g_XMIdentityR3,
-            (cornell_aabb.min - cornell_aabb.max) * 0.5 * scale
+            (0.5*(cornell_aabb.min - cornell_aabb.max) - cornell_aabb.min) * scale
         );
         XMStoreFloat4x4(&instance.transform, transform);
 
