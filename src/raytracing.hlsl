@@ -100,7 +100,7 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
     uint bounce_index;
     for (bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
         TraceRay(
-            g_scene, RAY_FLAG_NONE, 0xff,
+            g_scene, RAY_FLAG_NONE | RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0xff,
             0, 1, 0,
             ray, payload
         );
@@ -265,6 +265,32 @@ inline float3 eval_bssrdf_tabulated(TranslucentProperties translucent, float rad
     return s * g_translucent_bssrdf.SampleLevel(BssrdfSampler, radius / g.translucent_bssrdf_scale, 0) / z;
 }
 
+inline float3 eval_bssrdf_dipole_rgb(TranslucentProperties translucent, float radius) {
+    radius /= g.translucent_bssrdf_scale;
+    float3 attenuation           = (g.translucent_scattering*g.translucent_scattering_rgb/float3(g.translucent_blood, 1, 1) + g.translucent_absorption*g.translucent_absorption_rgb);
+    float3 mean_free_path        = 1 / attenuation;
+    float3 albedo                = g.translucent_scattering_rgb / attenuation;
+    float3 effective_attenuation = sqrt(3 * g.translucent_scattering*g.translucent_scattering_rgb/float3(g.translucent_blood, 1, 1) * g.translucent_absorption*g.translucent_absorption_rgb);
+
+    float eta              = g.translucent_refractive_index;
+    float diffuse_fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta;
+
+    // subsurface diffuse light source
+    float3 z_real    = mean_free_path;
+    float3 d_real    = radius + z_real;
+    float3 c_real    = z_real * (effective_attenuation + 1/d_real);
+
+    // virtual light source above surface
+    float3 z_virtual = mean_free_path * (1 + 1.25*(1 + diffuse_fresnel)/(1 - diffuse_fresnel));
+    float3 d_virtual = radius + z_virtual;
+    float3 c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
+
+    // combine real and virtual contributions
+    float3 m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
+    float3 m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
+    return max(0, albedo/(2*TAU) * (m_real + m_virtual)) / (g.translucent_bssrdf_scale*g.translucent_bssrdf_scale);
+}
+
 inline float3 eval_bssrdf_dipole(TranslucentProperties translucent, float radius) {
     float attenuation           = g.translucent_scattering + g.translucent_absorption;
     float mean_free_path        = 1 / attenuation;
@@ -292,7 +318,7 @@ inline float3 eval_bssrdf_dipole(TranslucentProperties translucent, float radius
 
 void debug_draw_translucent_samples(inout RayPayload payload, Attributes attr);
 
-#define TRANSLUCENT_INIT() \
+#define TRANSLUCENT_INIT()          \
     uint index = l.translucent_id * g.translucent_instance_stride + InstanceID(); \
     TranslucentProperties         translucent   = g_translucent_properties[index]; \
     StructuredBuffer<SamplePoint> samples       = g_translucent_samples[index]; \
@@ -314,8 +340,9 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
             SamplePoint sample_point = samples[i];
             float radius = length(sample_point.position - hit_point);
             float3 bssrdf;
-            if (g.translucent_bssrdf_scale) bssrdf = eval_bssrdf_tabulated(translucent, radius);
-            else                            bssrdf = eval_bssrdf_dipole(translucent, radius);
+            // if (g.translucent_bssrdf_scale) bssrdf = eval_bssrdf_tabulated(translucent, radius);
+            // else                            bssrdf = eval_bssrdf_dipole(translucent, radius);
+            bssrdf = eval_bssrdf_dipole_rgb(translucent, radius);
 
             diffuse_irradiance += bssrdf * sample_point.payload;
         }
@@ -326,15 +353,60 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
     float3 scatter = random_on_hemisphere(payload.rng, normal);
     float  lambert = dot(scatter, normal);
 
+
     float  incident_cosine     = lambert; // = dot(scatter, normal);
     float  incident_fresnel    = schlick(n, incident_cosine);                          // boundary n1=1, n2>1; reflected component
 
     float  transmitted_cosine  = sqrt(1 - 1/(n*n)*(1 - -dot(WorldRayDirection(), normal))); // nested identity: cos(asin(x)) = sin(acos(x)) = sqrt(1-x^2)
     float  transmitted_fresnel = 1 - schlick(n, transmitted_cosine);                   // boundary n1>1, n2=1; transmitted component
 
+
+
+    ////
+    // float m  = 0.01; // roughness
+
+    // float3 N = normalize(normal);
+	// float3 L = normalize(scatter);
+	// float3 E = normalize(-WorldRayDirection()); // we are in Eye Coordinates, so EyePos is (0,0,0)
+	// float3 H = normalize(L + E);
+
+	// float NdotH = max(dot(N, H),0.0);
+	// float NdotV = max(dot(N, E),0.0);
+	// float VdotH = max(dot(E, H),0.0);
+
+	// float c = abs(dot(L,H));
+	// float geo = sqrt(pow(n,2.0)+pow(c,2.0)-1.0);
+
+	// float F = 0.5*(pow(geo-c,2.0)/pow(geo+c,2.0))*
+	// (1.0+(
+	// 	pow(c*(geo+c)-1.0,2.0)/
+	// 	pow(c*(geo-c)-1.0,2.0)
+	// 	));
+
+	// float cosAlpha = dot(N,H);
+
+	// float tangenteCarre = (1.0 - pow(cosAlpha,2.0))/(pow(cosAlpha,2.0)*2.0*pow(m,2.0));
+
+	// float D = exp(-tangenteCarre)/(PI*pow(m,2.0)*pow(cosAlpha,4.0));
+
+	// float G = min(
+	// 	min(
+	// 		(2.0*NdotH*NdotV)/VdotH,
+	// 		(2.0*NdotH*dot(L,N))/VdotH
+	// 		),
+	// 	1.0);
+
+	// float ks = (D*F*G) / (4.0*NdotV*dot(L,N));
+
+	// float3 specular = LightColor * ks;
+
+    // ////
+
+
+
     payload.scatter     = scatter;
     payload.reflectance = l.color * lambert * incident_fresnel;
-    payload.emission    = diffuse_irradiance * transmitted_fresnel / (TAU/2);
+    payload.emission    = diffuse_irradiance * transmitted_fresnel;
     payload.t           = RayTCurrent();
 }
 

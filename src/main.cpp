@@ -168,6 +168,8 @@ int WINAPI wWinMain(
             CW_USEDEFAULT, CW_USEDEFAULT, rect.right-rect.left, rect.bottom-rect.top,
             NULL, WINDOW_MENU, hInstance, NULL
         );
+
+        SetThreadExecutionState(ES_DISPLAY_REQUIRED | ES_CONTINUOUS);
     }
 
     srand(GetTickCount64());
@@ -243,60 +245,66 @@ int WINAPI wWinMain(
         Array<Array<Vertex>> all_vertices = {};
         Array<Array<Index>>  all_indices  = {};
 
-        { // white walls
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-            parse_obj_file("data/cornell/floor.obj",   true, &vertices, &indices, &cornell_aabb);
-            parse_obj_file("data/cornell/back.obj",    true, &vertices, &indices, &cornell_aabb);
-            parse_obj_file("data/cornell/ceiling.obj", true, &vertices, &indices, &cornell_aabb);
+        // { // white walls
+        //     Array<Vertex> vertices = {};
+        //     Array<Index>  indices  = {};
+        //     parse_obj_file("data/cornell/floor.obj",   true, &vertices, &indices, &cornell_aabb);
+        //     parse_obj_file("data/cornell/back.obj",    true, &vertices, &indices, &cornell_aabb);
+        //     // parse_obj_file("data/cornell/ceiling.obj", true, &vertices, &indices, &cornell_aabb);
 
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
-            geometry.material.shader = Shader::Lambert;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
+        //     GeometryInstance geometry = {};
+        //     geometry.material.color  = { 1.0, 1.0, 1.0 };
+        //     geometry.material.shader = Shader::Lambert;
+        //     geometry.vertices = vertices;
+        //     geometry.indices  = indices;
 
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // red wall
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
+        //     array_push(&all_vertices, vertices);
+        //     array_push(&all_indices,  indices);
+        //     array_push(&geometries, geometry);
+        // }
+        // { // red wall
+        //     Array<Vertex> vertices = {};
+        //     Array<Index>  indices  = {};
 
-            GeometryInstance geometry = {};
-            parse_obj_file("data/cornell/redwall.obj", true, &vertices, &indices, &cornell_aabb);
-            geometry.material.color  = { 1.0, 0.0, 0.0 };
-            geometry.material.shader = Shader::Lambert;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
+        //     GeometryInstance geometry = {};
+        //     parse_obj_file("data/cornell/redwall.obj", true, &vertices, &indices, &cornell_aabb);
+        //     geometry.material.color  = { 1.0, 0.0, 0.0 };
+        //     geometry.material.shader = Shader::Lambert;
+        //     geometry.vertices = vertices;
+        //     geometry.indices  = indices;
 
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
+        //     array_push(&all_vertices, vertices);
+        //     array_push(&all_indices,  indices);
+        //     array_push(&geometries, geometry);
+        // }
+        // { // green wall
+        //     Array<Vertex> vertices = {};
+        //     Array<Index>  indices  = {};
+
+        //     parse_obj_file("data/cornell/greenwall.obj", true, &vertices, &indices, &cornell_aabb);
+        //     GeometryInstance geometry = {};
+        //     geometry.material.color  = { 0.0, 1.0, 0.0 };
+        //     geometry.material.shader = Shader::Lambert;
+        //     geometry.vertices = vertices;
+        //     geometry.indices  = indices;
+
+        //     array_push(&all_vertices, vertices);
+        //     array_push(&all_indices,  indices);
+        //     array_push(&geometries, geometry);
+        // }
         { // green wall
             Array<Vertex> vertices = {};
             Array<Index>  indices  = {};
 
             parse_obj_file("data/cornell/greenwall.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 0.0, 1.0, 0.0 };
-            geometry.material.shader = Shader::Lambert;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
+            for (auto& v : vertices) {
+                swap(&v.position.x, &v.position.y);
+                swap(&v.normal.x, &v.normal.y);
+            }
+            parse_obj_file("data/cornell/ceiling.obj", true, &vertices, &indices, &cornell_aabb);
 
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // light
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-
-            parse_obj_file("data/cornell/luminaire.obj", true, &vertices, &indices, &cornell_aabb);
             GeometryInstance geometry = {};
-            geometry.material.color  = { 50.0, 50.0, 50.0 };
+            geometry.material.color  = { 3.0, 3.0, 3.0 };
             geometry.material.shader = Shader::Light;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -305,36 +313,52 @@ int WINAPI wWinMain(
             array_push(&all_indices,  indices);
             array_push(&geometries, geometry);
         }
-        { // large box
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
+        // { // light
+        //     Array<Vertex> vertices = {};
+        //     Array<Index>  indices  = {};
 
-            parse_obj_file("data/cornell/largebox.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
-            geometry.material.shader = Shader::Translucent;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
+        //     parse_obj_file("data/cornell/luminaire.obj", true, &vertices, &indices, &cornell_aabb);
+        //     GeometryInstance geometry = {};
+        //     geometry.material.color  = { 50.0, 50.0, 50.0 };
+        //     geometry.material.shader = Shader::Light;
+        //     geometry.vertices = vertices;
+        //     geometry.indices  = indices;
 
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // small box
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
+        //     array_push(&all_vertices, vertices);
+        //     array_push(&all_indices,  indices);
+        //     array_push(&geometries, geometry);
+        // }
 
-            parse_obj_file("data/cornell/smallbox.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
-            geometry.material.shader = Shader::Translucent;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
+        // { // large box
+        //     Array<Vertex> vertices = {};
+        //     Array<Index>  indices  = {};
 
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
+        //     parse_obj_file("data/cornell/largebox.obj", true, &vertices, &indices, &cornell_aabb);
+        //     GeometryInstance geometry = {};
+        //     geometry.material.color  = { 1.0, 1.0, 1.0 };
+        //     geometry.material.shader = Shader::Translucent;
+        //     geometry.vertices = vertices;
+        //     geometry.indices  = indices;
+
+        //     array_push(&all_vertices, vertices);
+        //     array_push(&all_indices,  indices);
+        //     array_push(&geometries, geometry);
+        // }
+        // { // small box
+        //     Array<Vertex> vertices = {};
+        //     Array<Index>  indices  = {};
+
+        //     parse_obj_file("data/cornell/smallbox.obj", true, &vertices, &indices, &cornell_aabb);
+        //     GeometryInstance geometry = {};
+        //     geometry.material.color  = { 1.0, 1.0, 1.0 };
+        //     geometry.material.shader = Shader::Translucent;
+        //     geometry.vertices = vertices;
+        //     geometry.indices  = indices;
+
+        //     array_push(&all_vertices, vertices);
+        //     array_push(&all_indices,  indices);
+        //     array_push(&geometries, geometry);
+        // }
 
         cornell_blas = Raytracing::build_blas(cmd_list, geometries);
 
@@ -344,7 +368,7 @@ int WINAPI wWinMain(
 
         // append instance
         BlasInstance instance = {};
-        instance.blas        = &cornell_blas;
+        instance.blas         = &cornell_blas;
 
         float scale = 1.0 / aabb_widest(cornell_aabb);
         XMMATRIX transform = XMMatrixAffineTransformation(
@@ -357,43 +381,39 @@ int WINAPI wWinMain(
         array_push(&instances, instance);
     }
 
-    // Blas translucent_cube_blas; { // tranlucent cube
-    //     Array<Vertex> vertices = {};
-    //     Array<Index>  indices  = {};
-    //     parse_obj_file("data/debug_cube.obj", false, &vertices, &indices);
+    { // BUNNY
+        Aabb bunny_aabb = AABB_NULL;
+        Blas translucent_bunny_blas; { // tranlucent cube
+            Array<Vertex> vertices = {};
+            Array<Index>  indices  = {};
+            parse_obj_file("data/skin_sample_textured6.obj", false, &vertices, &indices, &bunny_aabb);
 
-    //     GeometryInstance geometry = {};
-    //     geometry.material.color  = { 0.0, 0.0, 1.0 };
-    //     geometry.material.shader = Shader::Translucent;
-    //     geometry.vertices = vertices;
-    //     geometry.indices  = indices;
+            GeometryInstance geometry = {};
+            geometry.material.color  = { 1.0, 1.0, 1.0 };
+            geometry.material.shader = Shader::Translucent;
+            geometry.vertices = vertices;
+            geometry.indices  = indices;
 
-    //     translucent_cube_blas = Raytracing::build_blas(cmd_list, array_of(&geometry));
+            translucent_bunny_blas = Raytracing::build_blas(cmd_list, array_of(&geometry));
 
-    //     array_free(&vertices);
-    //     array_free(&indices);
-    // }
+            array_free(&vertices);
+            array_free(&indices);
+        }
 
-    // { // translucent cube #1
-    //     const float cube_scale = 0.4;
-    //     BlasInstance instance = {};
-    //     instance.blas        = &translucent_cube_blas;
+        // append instance
+        BlasInstance instance = {};
+        instance.blas         = &translucent_bunny_blas;
 
-    //     XMMATRIX transform = XMMatrixScaling(cube_scale, cube_scale, cube_scale) * XMMatrixRotationZ(0.5*TAU + TAU/24) * XMMatrixRotationX(TAU/24) * XMMatrixTranslation(-0.15,0,0);
-    //     XMStoreFloat4x4(&instance.transform, transform);
+        float scale = 0.5 * 1.0 / aabb_widest(bunny_aabb);
+        XMMATRIX transform = XMMatrixAffineTransformation(
+            XMVectorReplicate(scale),
+            g_XMZero, g_XMIdentityR3,
+            (0.5*(bunny_aabb.min - bunny_aabb.max) - bunny_aabb.min) * scale
+        );
+        XMStoreFloat4x4(&instance.transform, transform);
 
-    //     array_push(&instances, instance);
-    // };
-    // { // translucent cube #2
-    //     const float cube_scale = 0.1;
-    //     BlasInstance instance = {};
-    //     instance.blas        = &translucent_cube_blas;
-
-    //     XMMATRIX transform = XMMatrixScaling(cube_scale, cube_scale, cube_scale) * XMMatrixRotationZ(-TAU/24) * XMMatrixRotationX(-TAU/24) * XMMatrixTranslation(0.15,0,0);
-    //     XMStoreFloat4x4(&instance.transform, transform);
-
-    //     array_push(&instances, instance);
-    // };
+        array_push(&instances, instance);
+    }
 
     // finalize raytracing geometry and update descriptors
     Raytracing::build_tlas(cmd_list, instances);
@@ -410,11 +430,15 @@ int WINAPI wWinMain(
     Raytracing::g_globals.samples_per_pixel  = 1;
     Raytracing::g_globals.bounces_per_sample = 4;
 
-    Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
+    Raytracing::g_globals.translucent_bssrdf_scale = 1.0;
     Raytracing::g_globals.translucent_bssrdf_fudge = 1.0;
     Raytracing::g_globals.translucent_refractive_index = 1.5;
-    Raytracing::g_globals.translucent_scattering = 15.0;
-    Raytracing::g_globals.translucent_absorption = 0.1;
+    Raytracing::g_globals.translucent_scattering = 1.0;
+    Raytracing::g_globals.translucent_absorption = 1.0;
+
+    Raytracing::g_globals.translucent_scattering_rgb = {7.4, 8.8, 10.1};
+    Raytracing::g_globals.translucent_absorption_rgb = {0.32, 1.7, 4.8};
+    Raytracing::g_globals.translucent_blood = 1.0;
 
     // MAIN LOOP
 
@@ -523,21 +547,26 @@ int WINAPI wWinMain(
             g_do_reset_accumulator |= ImGui::Checkbox("enabled##translucent", &Raytracing::g_enable_subsurface_scattering);
 
             static float scale = Raytracing::g_globals.translucent_bssrdf_scale;
-            if (ImGui::RadioButton("tabulated", Raytracing::g_globals.translucent_bssrdf_scale != 0)) { Raytracing::g_globals.translucent_bssrdf_scale = scale; g_do_reset_accumulator = true; }; ImGui::SameLine();
-            if (ImGui::RadioButton("dipole",    Raytracing::g_globals.translucent_bssrdf_scale == 0)) { Raytracing::g_globals.translucent_bssrdf_scale = 0;     g_do_reset_accumulator = true; };
+            // if (ImGui::RadioButton("tabulated", Raytracing::g_globals.translucent_bssrdf_scale != 0)) { Raytracing::g_globals.translucent_bssrdf_scale = scale; g_do_reset_accumulator = true; }; ImGui::SameLine();
+            // if (ImGui::RadioButton("dipole",    Raytracing::g_globals.translucent_bssrdf_scale == 0)) { Raytracing::g_globals.translucent_bssrdf_scale = 0;     g_do_reset_accumulator = true; };
 
             g_do_reset_translucent_accumulator |= ImGui::SliderFloat("refractive index##translucent", &Raytracing::g_globals.translucent_refractive_index, 1.0, 5.0, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_AlwaysClamp);
 
+            g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf radius##translucent", &Raytracing::g_globals.translucent_bssrdf_scale, 0.001, 100, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
             if (Raytracing::g_globals.translucent_bssrdf_scale != 0) {
-                // tabulated
-                g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf radius##translucent", &Raytracing::g_globals.translucent_bssrdf_scale, 0.001, 100, "%.3f", ImGuiSliderFlags_Logarithmic | ImGuiSliderFlags_NoRoundToFormat);
-                g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf fudge##translucent", &Raytracing::g_globals.translucent_bssrdf_fudge, 0.0, 10000, "%.3f", ImGuiSliderFlags_Logarithmic);
-                Raytracing::g_globals.translucent_bssrdf_scale = max(FLT_EPSILON, Raytracing::g_globals.translucent_bssrdf_scale);
-                scale = Raytracing::g_globals.translucent_bssrdf_scale;
-            } else {
+            //     // tabulated
+            //     g_do_reset_accumulator |= ImGui::SliderFloat("bssrdf fudge##translucent", &Raytracing::g_globals.translucent_bssrdf_fudge, 0.0, 10000, "%.3f", ImGuiSliderFlags_Logarithmic);
+            //     Raytracing::g_globals.translucent_bssrdf_scale = max(FLT_EPSILON, Raytracing::g_globals.translucent_bssrdf_scale);
+            //     scale = Raytracing::g_globals.translucent_bssrdf_scale;
+            // } else {
                 // dipole
                 g_do_reset_accumulator |= ImGui::SliderFloat("scattering##translucent", &Raytracing::g_globals.translucent_scattering, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
                 g_do_reset_accumulator |= ImGui::SliderFloat("absorption##translucent", &Raytracing::g_globals.translucent_absorption, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
+                g_do_reset_accumulator |= ImGui::SliderFloat("blood##translucent", &Raytracing::g_globals.translucent_blood, 0, 10, "%.3f", ImGuiSliderFlags_Logarithmic);
+
+                ImGui::Separator();
+                g_do_reset_accumulator |= ImGui::SliderFloat3("scattering##translucent_rgb", (float*) &Raytracing::g_globals.translucent_scattering_rgb, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
+                g_do_reset_accumulator |= ImGui::SliderFloat3("absorption##translucent_rgb", (float*) &Raytracing::g_globals.translucent_absorption_rgb, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
             }
         }
 
@@ -634,6 +663,11 @@ int WINAPI wWinMain(
             static ID3D12Resource* capture_readback_buffer = NULL;
             static UINT            capture_readback_buffer_pitch;
 
+            static float capture_blood_range[2];
+            static float capture_absorption_range[2];
+            static int   capture_grid_count = 4;
+            static int   capture_grid_index = 0;
+
             if (do_capture && Raytracing::g_globals.accumulator_count == capture_samples) {
                 // create readback buffer and add copy instructions to cmd_list
                 do_capture = false;
@@ -689,25 +723,51 @@ int WINAPI wWinMain(
                 CHECK_RESULT(capture_readback_buffer->Map(0, NULL, &data_ptr));
 
                 // write image file
-                char timestamp[32] = {};
+                static char timestamp[128] = {};
                 const time_t now = time(NULL);
-                strftime(timestamp, 32, "%Y_%m_%d_%H_%M_%S", gmtime(&now));
+                if (capture_grid_index == 0) {
+                    strftime(timestamp, 128, "captures/photonix/%Y_%m_%d_%H_%M_%S", gmtime(&now));
+                    CreateDirectoryA(timestamp, NULL);
+                }
                 char filename[128] = {};
-                sprintf(filename, "captures/%s_%s.%dx%d.s%d.b%d.png", SCENE_NAME, timestamp, g_width, g_height, capture_samples, Raytracing::g_globals.bounces_per_sample);
+                sprintf(filename, "%s/%ix%i.png", timestamp, capture_grid_index/capture_grid_count, capture_grid_index%capture_grid_count);
                 stbi_write_png(filename, g_width, g_height, 4, data_ptr, capture_readback_buffer_pitch);
 
                 capture_readback_buffer->Unmap(0, &CD3DX12_RANGE(0, 0));
                 capture_readback_buffer->Release();
                 capture_readback_buffer = NULL;
 
-                g_prevent_resizing -= 1;
+                //g_prevent_resizing -= 1;
+                capture_grid_index += 1;
+                if (capture_grid_index < capture_grid_count*capture_grid_count) {
+
+                    float blood_t      = (float) (capture_grid_index / capture_grid_count) / (float) (capture_grid_count-1);
+                    float absorption_t = (float) (capture_grid_index % capture_grid_count) / (float) (capture_grid_count-1);
+                    Raytracing::g_globals.translucent_blood = lerp(capture_blood_range[0], capture_blood_range[1], blood_t*blood_t);
+                    Raytracing::g_globals.translucent_absorption = lerp(capture_absorption_range[0], capture_absorption_range[1], absorption_t*absorption_t);
+                    do_capture = true;
+                    g_do_reset_accumulator = true;
+                }
             }
 
             bool capture_updated = false;
             capture_updated |= ImGui::SliderInt("samples##capture", (int*) &capture_samples, Raytracing::g_globals.samples_per_pixel, 32768, "%d", ImGuiSliderFlags_AlwaysClamp);
             capture_samples = round_up(ensure_unsigned(capture_samples), Raytracing::g_globals.samples_per_pixel);
 
+            capture_updated |= ImGui::SliderInt("grid##capture", &capture_grid_count, 1, 10);
+            capture_updated |= ImGui::InputFloat2("blood##capture", capture_blood_range);
+            capture_updated |= ImGui::InputFloat2("absorption##capture", capture_absorption_range);
+
             capture_updated |= ImGui::Checkbox("capture", &do_capture);
+
+            if (capture_updated && do_capture) {
+                capture_grid_index = 0;
+                Raytracing::g_globals.translucent_blood      = capture_blood_range[0];
+                Raytracing::g_globals.translucent_absorption = capture_absorption_range[0];
+
+                g_do_reset_accumulator = true;
+                Raytracing::g_enable_translucent_sample_collection = false;
+            }
 
             ImGui::Text("accumulated samples: %d", Raytracing::g_globals.accumulator_count);
         }

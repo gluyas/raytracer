@@ -123,6 +123,10 @@ struct RaytracingGlobals {
     // dipole model
     COMMON_FLOAT    translucent_scattering;
     COMMON_FLOAT    translucent_absorption;
+
+    COMMON_FLOAT3   translucent_scattering_rgb;
+    COMMON_FLOAT3   translucent_absorption_rgb;
+    COMMON_FLOAT    translucent_blood;
 };
 
 struct RaytracingLocals {
@@ -154,6 +158,10 @@ inline bool equals(T* a, T* b) {
 
 inline float clamp(float x, float a, float b) {
     return fmax(fmin(x, b), a);
+}
+
+inline float lerp(float a, float b, float t) {
+    return (1-t)*a + t*b;
 }
 
 inline UINT64 round_up(UINT64 x, UINT64 d) {

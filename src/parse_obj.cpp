@@ -25,7 +25,7 @@ end:
     return i;
 }
 
-void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb) {
+void parse_obj_file(const char* filename, bool swap_yz, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb) {
     FILE* file = fopen(filename, "rb");
 
     const UINT64 char_buf_len = 512;
@@ -54,6 +54,7 @@ void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* ve
                 XMFLOAT3 v;
 
                 assert(parse_floats(&substr, 3, (float*) &v) == 3);
+                if (swap_yz) swap(&v.y, &v.z);
                 if (aabb) {
                     *aabb = aabb_join(*aabb, XMLoadFloat3(&v));
                 }
@@ -70,6 +71,7 @@ void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* ve
                 // normal
                 XMFLOAT3 vn;
                 assert(parse_floats(&substr, 3, (float*) &vn) == 3);
+                if (swap_yz) swap(&vn.y, &vn.z);
                 array_push(&vns, vn);
             }
         } else if (substr[0] == 'f') {
@@ -158,21 +160,10 @@ void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* ve
                     XMVECTOR c = XMLoadFloat3(&vs[v_indices[2]]) - a;
                     XMStoreFloat3(&vertex.normal, XMVector3Normalize(XMVector3Cross(b, c)));
                 }
-                if (convert_to_rhs) {
-                    swap(&vertex.position.y, &vertex.position.z);
-                    vertex.position.x = -vertex.position.x + XMVectorGetX(aabb->max + aabb->min);
-
-                    swap(&vertex.normal.y, &vertex.normal.z);
-                    vertex.normal.x = -vertex.normal.x;
-                }
                 // if (vt_indices_count); // TODO: handle uv coordinates
                 array_push(vertices, vertex);
             }
         }
-    }
-    if (convert_to_rhs) {
-        aabb->min = XMVectorSwizzle<0, 2, 1, 3>(aabb->min);
-        aabb->max = XMVectorSwizzle<0, 2, 1, 3>(aabb->max);
     }
     free(char_buf);
     fclose(file);

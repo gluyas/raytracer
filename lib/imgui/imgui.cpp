@@ -4419,22 +4419,22 @@ bool ImGui::IsMouseHoveringRect(const ImVec2& r_min, const ImVec2& r_max, bool c
     return true;
 }
 
-int ImGui::GetKeyIndex(ImGuiKey imgui_key)
+int ImGui::GetKeyIndex(ImGuiKey imgui_key_sorted)
 {
-    IM_ASSERT(imgui_key >= 0 && imgui_key < ImGuiKey_COUNT);
+    IM_ASSERT(imgui_key_sorted >= 0 && imgui_key_sorted < ImGuiKey_COUNT);
     ImGuiContext& g = *GImGui;
-    return g.IO.KeyMap[imgui_key];
+    return g.IO.KeyMap[imgui_key_sorted];
 }
 
 // Note that dear imgui doesn't know the semantic of each entry of io.KeysDown[]!
 // Use your own indices/enums according to how your back-end/engine stored them into io.KeysDown[]!
-bool ImGui::IsKeyDown(int user_key_index)
+bool ImGui::IsKeyDown(int user_key_sorted_index)
 {
-    if (user_key_index < 0)
+    if (user_key_sorted_index < 0)
         return false;
     ImGuiContext& g = *GImGui;
-    IM_ASSERT(user_key_index >= 0 && user_key_index < IM_ARRAYSIZE(g.IO.KeysDown));
-    return g.IO.KeysDown[user_key_index];
+    IM_ASSERT(user_key_sorted_index >= 0 && user_key_sorted_index < IM_ARRAYSIZE(g.IO.KeysDown));
+    return g.IO.KeysDown[user_key_sorted_index];
 }
 
 // t0 = previous time (e.g.: g.Time - g.IO.DeltaTime)
@@ -4465,26 +4465,26 @@ int ImGui::GetKeyPressedAmount(int key_index, float repeat_delay, float repeat_r
     return CalcTypematicRepeatAmount(t - g.IO.DeltaTime, t, repeat_delay, repeat_rate);
 }
 
-bool ImGui::IsKeyPressed(int user_key_index, bool repeat)
+bool ImGui::IsKeyPressed(int user_key_sorted_index, bool repeat)
 {
     ImGuiContext& g = *GImGui;
-    if (user_key_index < 0)
+    if (user_key_sorted_index < 0)
         return false;
-    IM_ASSERT(user_key_index >= 0 && user_key_index < IM_ARRAYSIZE(g.IO.KeysDown));
-    const float t = g.IO.KeysDownDuration[user_key_index];
+    IM_ASSERT(user_key_sorted_index >= 0 && user_key_sorted_index < IM_ARRAYSIZE(g.IO.KeysDown));
+    const float t = g.IO.KeysDownDuration[user_key_sorted_index];
     if (t == 0.0f)
         return true;
     if (repeat && t > g.IO.KeyRepeatDelay)
-        return GetKeyPressedAmount(user_key_index, g.IO.KeyRepeatDelay, g.IO.KeyRepeatRate) > 0;
+        return GetKeyPressedAmount(user_key_sorted_index, g.IO.KeyRepeatDelay, g.IO.KeyRepeatRate) > 0;
     return false;
 }
 
-bool ImGui::IsKeyReleased(int user_key_index)
+bool ImGui::IsKeyReleased(int user_key_sorted_index)
 {
     ImGuiContext& g = *GImGui;
-    if (user_key_index < 0) return false;
-    IM_ASSERT(user_key_index >= 0 && user_key_index < IM_ARRAYSIZE(g.IO.KeysDown));
-    return g.IO.KeysDownDurationPrev[user_key_index] >= 0.0f && !g.IO.KeysDown[user_key_index];
+    if (user_key_sorted_index < 0) return false;
+    IM_ASSERT(user_key_sorted_index >= 0 && user_key_sorted_index < IM_ARRAYSIZE(g.IO.KeysDown));
+    return g.IO.KeysDownDurationPrev[user_key_sorted_index] >= 0.0f && !g.IO.KeysDown[user_key_sorted_index];
 }
 
 bool ImGui::IsMouseDown(ImGuiMouseButton button)
@@ -6304,9 +6304,9 @@ void ImGui::PopItemFlag()
 }
 
 // FIXME: Look into renaming this once we have settled the new Focus/Activation/TabStop system.
-void ImGui::PushAllowKeyboardFocus(bool allow_keyboard_focus)
+void ImGui::PushAllowKeyboardFocus(bool allow_key_sortedboard_focus)
 {
-    PushItemFlag(ImGuiItemFlags_NoTabStop, !allow_keyboard_focus);
+    PushItemFlag(ImGuiItemFlags_NoTabStop, !allow_key_sortedboard_focus);
 }
 
 void ImGui::PopAllowKeyboardFocus()
@@ -6893,9 +6893,9 @@ static void ImGui::ErrorCheckEndFrameSanityChecks()
 
     // Verify that io.KeyXXX fields haven't been tampered with. Key mods should not be modified between NewFrame() and EndFrame()
     // One possible reason leading to this assert is that your back-ends update inputs _AFTER_ NewFrame().
-    const ImGuiKeyModFlags expected_key_mod_flags = GetMergedKeyModFlags();
-    IM_ASSERT(g.IO.KeyMods == expected_key_mod_flags && "Mismatching io.KeyCtrl/io.KeyShift/io.KeyAlt/io.KeySuper vs io.KeyMods");
-    IM_UNUSED(expected_key_mod_flags);
+    const ImGuiKeyModFlags expected_key_sorted_mod_flags = GetMergedKeyModFlags();
+    IM_ASSERT(g.IO.KeyMods == expected_key_sorted_mod_flags && "Mismatching io.KeyCtrl/io.KeyShift/io.KeyAlt/io.KeySuper vs io.KeyMods");
+    IM_UNUSED(expected_key_sorted_mod_flags);
 
     // Report when there is a mismatch of Begin/BeginChild vs End/EndChild calls. Important: Remember that the Begin/BeginChild API requires you
     // to always call End/EndChild even if Begin/BeginChild returns false! (this is unfortunately inconsistent with most other Begin* API).
@@ -8613,7 +8613,7 @@ static void ImGui::NavUpdate()
 
     // Set input source as Gamepad when buttons are pressed (as some features differs when used with Gamepad vs Keyboard)
     // (do it before we map Keyboard input!)
-    bool nav_keyboard_active = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
+    bool nav_key_sortedboard_active = (io.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard) != 0;
     bool nav_gamepad_active = (io.ConfigFlags & ImGuiConfigFlags_NavEnableGamepad) != 0 && (io.BackendFlags & ImGuiBackendFlags_HasGamepad) != 0;
     if (nav_gamepad_active && g.NavInputSource != ImGuiInputSource_NavGamepad)
     {
@@ -8623,7 +8623,7 @@ static void ImGui::NavUpdate()
     }
 
     // Update Keyboard->Nav inputs mapping
-    if (nav_keyboard_active)
+    if (nav_key_sortedboard_active)
     {
         #define NAV_MAP_KEY(_KEY, _NAV_INPUT)  do { if (IsKeyDown(io.KeyMap[_KEY])) { io.NavInputs[_NAV_INPUT] = 1.0f; g.NavInputSource = ImGuiInputSource_NavKeyboard; } } while (0)
         NAV_MAP_KEY(ImGuiKey_Space,     ImGuiNavInput_Activate );
@@ -8694,7 +8694,7 @@ static void ImGui::NavUpdate()
     NavUpdateWindowing();
 
     // Set output flags for user application
-    io.NavActive = (nav_keyboard_active || nav_gamepad_active) && g.NavWindow && !(g.NavWindow->Flags & ImGuiWindowFlags_NoNavInputs);
+    io.NavActive = (nav_key_sortedboard_active || nav_gamepad_active) && g.NavWindow && !(g.NavWindow->Flags & ImGuiWindowFlags_NoNavInputs);
     io.NavVisible = (io.NavActive && g.NavId != 0 && !g.NavDisableHighlight) || (g.NavWindowingTarget != NULL);
 
     // Process NavCancel input (to close a popup, get back to parent, clear focus)
@@ -8793,7 +8793,7 @@ static void ImGui::NavUpdate()
     // Update PageUp/PageDown/Home/End scroll
     // FIXME-NAV: Consider enabling those keys even without the master ImGuiConfigFlags_NavEnableKeyboard flag?
     float nav_scoring_rect_offset_y = 0.0f;
-    if (nav_keyboard_active)
+    if (nav_key_sortedboard_active)
         nav_scoring_rect_offset_y = NavUpdatePageUpPageDown();
 
     // If we initiate a movement request and have no current NavId, we initiate a InitDefautRequest that will be used as a fallback if the direction fails to find a match
@@ -9150,14 +9150,14 @@ static void ImGui::NavUpdateWindowing()
 
     // Start CTRL-TAB or Square+L/R window selection
     bool start_windowing_with_gamepad = allow_windowing && !g.NavWindowingTarget && IsNavInputTest(ImGuiNavInput_Menu, ImGuiInputReadMode_Pressed);
-    bool start_windowing_with_keyboard = allow_windowing && !g.NavWindowingTarget && g.IO.KeyCtrl && IsKeyPressedMap(ImGuiKey_Tab) && (g.IO.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard);
-    if (start_windowing_with_gamepad || start_windowing_with_keyboard)
+    bool start_windowing_with_key_sortedboard = allow_windowing && !g.NavWindowingTarget && g.IO.KeyCtrl && IsKeyPressedMap(ImGuiKey_Tab) && (g.IO.ConfigFlags & ImGuiConfigFlags_NavEnableKeyboard);
+    if (start_windowing_with_gamepad || start_windowing_with_key_sortedboard)
         if (ImGuiWindow* window = g.NavWindow ? g.NavWindow : FindWindowNavFocusable(g.WindowsFocusOrder.Size - 1, -INT_MAX, -1))
         {
             g.NavWindowingTarget = g.NavWindowingTargetAnim = window->RootWindow; // FIXME-DOCK: Will need to use RootWindowDockStop
             g.NavWindowingTimer = g.NavWindowingHighlightAlpha = 0.0f;
-            g.NavWindowingToggleLayer = start_windowing_with_keyboard ? false : true;
-            g.NavInputSource = start_windowing_with_keyboard ? ImGuiInputSource_NavKeyboard : ImGuiInputSource_NavGamepad;
+            g.NavWindowingToggleLayer = start_windowing_with_key_sortedboard ? false : true;
+            g.NavInputSource = start_windowing_with_key_sortedboard ? ImGuiInputSource_NavKeyboard : ImGuiInputSource_NavGamepad;
         }
 
     // Gamepad update
