@@ -34,7 +34,7 @@ struct ArrayView {
     }
 
     inline operator ArrayView<void>() {
-        return array_from((void*) this->ptr, array_len_in_bytes(this));
+        return from((void*) this->ptr, array_len_in_bytes(this));
     }
 
     inline T* offset(size_t index) {
