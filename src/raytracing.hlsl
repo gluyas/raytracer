@@ -161,13 +161,47 @@ TriangleHitGroup lambert_hit_group = {
     "lambert_chit"
 };
 
+inline float step(float a) {
+    return (a > 0.0f) ? 1.0f : 0.0f;
+}
+
+//
+//float smith_shadow_masking() {
+//    ;
+//}
+
+float GGX(float3 m, float3 n, float alpha) {
+    float PI = 3.14159265f;     //TODO: define as const outside
+    float dot_mn = dot(n,m);
+
+    float cos_sq = dot_mn*dot_mn;
+    float cos_part = cos_sq*cos_sq;  //cos^4(angle m)
+    float tan_part = 1.0f - (1.0f/cos_sq);  //tan^2(angle m)
+    float alpha_sq = alpha * alpha;
+    float sum_part = alpha_sq + tan_part; //alpha^2 + tan^2(angle m)
+    float denom_sq = sum_part*sum_part;  //(alpha^2 + tan^2(angle m))^2
+
+    return (alpha_sq * step(dot_mn))/(PI * cos_part * denom_sq);
+}
+
 [shader("closesthit")]
 void lambert_chit(inout RayPayload payload, Attributes attr) {
     uint3  indices = load_3x16bit_indices(l_indices, PrimitiveIndex());
     float3 normal  = get_world_space_normal(indices, attr.barycentrics);
 
-    payload.scatter     = random_on_hemisphere(payload.rng, normal);
-    payload.reflectance = l.color * dot(normal, payload.scatter);
+    float3 incoming = payload.scatter;
+    float3 outgoing = random_on_hemisphere(payload.rng, normal);
+
+    float3 lambret = l.color * dot(normal, outgoing);
+    //assumption: roughness = 0.01
+    //based on [Walter2007]
+    float3 m_normal = float3(1.0f,0.0f,0.0f);
+
+    float cook_tor = GGX(m_normal, normal, 0.1f)/(dot(outgoing, normal) * dot(incoming, normal));
+    //float cook_tor = 1.0f/(4.0f * max(dot(outgoing, normal), 0.0f) * max(dot(normal, incoming), 0.0f));
+
+    payload.scatter     = outgoing; //random_on_hemisphere(payload.rng, normal);
+    payload.reflectance = float3(cook_tor,0,0); //lambret + cook_tor;
     payload.emission    = 0;
     payload.t           = RayTCurrent();
 }
