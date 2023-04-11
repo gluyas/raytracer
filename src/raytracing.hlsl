@@ -173,7 +173,7 @@ float GGX(float3 m, float3 n, float alpha) {    //distribution
     float sec = (length(m)*length(n))/dot_mn;
 
     float cos_part = cos*cos*cos*cos;
-    float tan_part = 1.0f - (sec*sec);
+    float tan_part = (sec*sec) - 1.0f;
     float alpha_sq = alpha * alpha;
     float sum_part = alpha_sq + tan_part; //alpha^2 + tan^2(angle m)
     float denom_sq = sum_part*sum_part;  //(alpha^2 + tan^2(angle m))^2
@@ -186,7 +186,7 @@ float G1(float3 v, float3 m, float3 n, float alpha) {   //shadow masking
     float step_coeff = step(vm_dot/dot(v,n));
 
     float sec = (length(v)*length(m))/vm_dot;
-    float tan_part = 1.0f - sec*sec;
+    float tan_part = sec*sec - 1.0f;
     float denom = 1.0f + sqrt(1.0f + alpha*alpha*tan_part*tan_part); //1 + sqrt(1 + alpha^2 * tan^2(angle v))
 
     return step_coeff * (2.0f/denom);
@@ -201,26 +201,36 @@ float F(float3 i, float3 m, float Ni, float Nt) { //schlick's fresnel
 
 [shader("closesthit")]
 void lambert_chit(inout RayPayload payload, Attributes attr) {
+    float PI = 3.14159265f;     //TODO: define as const outside
     uint3  indices = load_3x16bit_indices(l_indices, PrimitiveIndex());
     float3 normal  = get_world_space_normal(indices, attr.barycentrics);
 
-    float3 incoming = payload.scatter;
+    float3 incoming = WorldRayDirection();
     float3 outgoing = random_on_hemisphere(payload.rng, normal);
+    float dot_nl = dot(normal, outgoing);
 
-    float3 lambret = l.color * dot(normal, outgoing);
     //based on [Walter2007]
-    float roughness = 0.001f;
-    float3 m_normal = float3(0.0f,0.0f,1.0f);
+    float roughness = 0.5f;
+    float3 m_normal = normalize(incoming + outgoing);   //half vector
 
-    float cook_tor = 
+    float incident_index = 1.0f;
+    float transmitted_index = g.translucent_refractive_index;
+
+    float fresnel = F(outgoing, normal, incident_index, transmitted_index);
+    float spec = 
         GGX(m_normal, normal, roughness) *
-        G1(incoming, m_normal, normal, roughness) * G1(outgoing, m_normal, normal, roughness) *   //making uncorrelated height assumption G2(V,L) = G1(V)*G1(L)
-        F(incoming, m_normal, 1.0f, 1.3f);   //assumption: refractive index of material is 1.3
-    cook_tor = cook_tor/(4.0f * dot(outgoing, normal) * dot(incoming, normal));
-    //float cook_tor = 1.0f/(4.0f * max(dot(outgoing, normal), 0.0f) * max(dot(normal, incoming), 0.0f));
+        G1(incoming, m_normal, normal, roughness) * G1(outgoing, m_normal, normal, roughness) *
+        F(outgoing, m_normal, incident_index, transmitted_index);
+    spec = spec/(4.0f * dot_nl * dot(incoming, normal));
+    spec = spec * dot_nl;   //solid angle
 
-    payload.scatter     = outgoing; //random_on_hemisphere(payload.rng, normal);
-    payload.reflectance = float3(cook_tor,cook_tor,cook_tor); //lambret + cook_tor;
+    float diffuse = l.color;    //lambert
+    diffuse = diffuse * dot_nl; //solid angle
+
+    float3 brdf = fresnel*spec +  (1.0f-fresnel)*(l.color * dot_nl);
+
+    payload.scatter     = outgoing;
+    payload.reflectance = brdf;
     payload.emission    = 0;
     payload.t           = RayTCurrent();
 }
