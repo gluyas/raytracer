@@ -27,6 +27,7 @@ enum Shader {
 struct Material {
     Shader   shader;
     XMFLOAT3 color;
+    //ID3D12Resource texture;
 };
 
 struct GeometryInstance {

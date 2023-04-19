@@ -166,6 +166,7 @@ void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* ve
                     vertex.normal.x = -vertex.normal.x;
                 }
                 // if (vt_indices_count); // TODO: handle uv coordinates
+                if (vt_indices_count) vertex.uv = vts[vt_indices[i]];
                 array_push(vertices, vertex);
             }
         }

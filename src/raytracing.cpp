@@ -371,6 +371,8 @@ Blas build_blas(
     SET_NAME(blas.vb);
     blas.ib = create_buffer_and_write_contents(cmd_list, indices,  D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, Device::push_uninitialized_temp_resource(temp_resources));
     SET_NAME(blas.ib);
+    //upload texture to gpu and get virtual address
+    //create_texture(cmd_list, );
 
     // final geometry pass
     ArrayView<ShaderRecord> shader_records = array_slice_from(&g_shader_table, blas.shader_table_index);

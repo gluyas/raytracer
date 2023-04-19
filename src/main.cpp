@@ -6,7 +6,8 @@ using Device::g_device;
 using Device::g_descriptor_size;
 using Device::g_rtv_descriptor_size;
 
-#include "parse_obj.h"
+//#include "parse_obj.h"
+#include "mesh_gen.h"
 #include "raytracing.h"
 #include "bluenoise.h"
 
@@ -142,6 +143,7 @@ LRESULT CALLBACK WindowProc(
     }
 }
 
+
 int WINAPI wWinMain(
     HINSTANCE hInstance,
     HINSTANCE hPrevInstance,
@@ -242,99 +244,27 @@ int WINAPI wWinMain(
         Array<GeometryInstance> geometries = {};
         Array<Array<Vertex>> all_vertices = {};
         Array<Array<Index>>  all_indices  = {};
+        Array<const char*> files = {};
+        array_push(&files, "data/cornell/luminaire.obj");
+        mesh_load(files, cornell_aabb, Material{Shader::Light, { 50.0, 50.0, 50.0 }}, geometries, all_vertices, all_indices);
+        
+        files = {};
+        array_push(&files, "data/cornell/floor.obj");
+        array_push(&files, "data/cornell/back.obj");
+        array_push(&files, "data/cornell/ceiling.obj");
+        mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 1.0, 1.0 }}, geometries, all_vertices, all_indices);
 
-        { // white walls
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-            parse_obj_file("data/cornell/floor.obj",   true, &vertices, &indices, &cornell_aabb);
-            parse_obj_file("data/cornell/back.obj",    true, &vertices, &indices, &cornell_aabb);
-            parse_obj_file("data/cornell/ceiling.obj", true, &vertices, &indices, &cornell_aabb);
+        files = {};
+        array_push(&files, "data/cornell/redwall.obj");
+        mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 0.0, 0.0 }}, geometries, all_vertices, all_indices);
 
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
-            geometry.material.shader = Shader::Lambert;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
-
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // red wall
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-
-            GeometryInstance geometry = {};
-            parse_obj_file("data/cornell/redwall.obj", true, &vertices, &indices, &cornell_aabb);
-            geometry.material.color  = { 1.0, 0.0, 0.0 };
-            geometry.material.shader = Shader::Lambert;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
-
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // green wall
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-
-            parse_obj_file("data/cornell/greenwall.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 0.0, 1.0, 0.0 };
-            geometry.material.shader = Shader::Lambert;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
-
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // light
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-
-            parse_obj_file("data/cornell/luminaire.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 50.0, 50.0, 50.0 };
-            geometry.material.shader = Shader::Light;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
-
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // large box
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-
-            parse_obj_file("data/cornell/largebox.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
-            geometry.material.shader = Shader::Translucent;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
-
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
-        { // small box
-            Array<Vertex> vertices = {};
-            Array<Index>  indices  = {};
-
-            parse_obj_file("data/cornell/smallbox.obj", true, &vertices, &indices, &cornell_aabb);
-            GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
-            geometry.material.shader = Shader::Translucent;
-            geometry.vertices = vertices;
-            geometry.indices  = indices;
-
-            array_push(&all_vertices, vertices);
-            array_push(&all_indices,  indices);
-            array_push(&geometries, geometry);
-        }
+        files = {};
+        array_push(&files, "data/cornell/greenwall.obj");
+        mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 0.0, 1.0, 0.0 }}, geometries, all_vertices, all_indices);
+        
+        files = {};
+        array_push(&files, "data/sphere_Tex.obj");
+        mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 1.0, 1.0 }}, geometries, all_vertices, all_indices);
 
         cornell_blas = Raytracing::build_blas(cmd_list, geometries);
 
@@ -356,44 +286,6 @@ int WINAPI wWinMain(
 
         array_push(&instances, instance);
     }
-
-    // Blas translucent_cube_blas; { // tranlucent cube
-    //     Array<Vertex> vertices = {};
-    //     Array<Index>  indices  = {};
-    //     parse_obj_file("data/debug_cube.obj", false, &vertices, &indices);
-
-    //     GeometryInstance geometry = {};
-    //     geometry.material.color  = { 0.0, 0.0, 1.0 };
-    //     geometry.material.shader = Shader::Translucent;
-    //     geometry.vertices = vertices;
-    //     geometry.indices  = indices;
-
-    //     translucent_cube_blas = Raytracing::build_blas(cmd_list, array_of(&geometry));
-
-    //     array_free(&vertices);
-    //     array_free(&indices);
-    // }
-
-    // { // translucent cube #1
-    //     const float cube_scale = 0.4;
-    //     BlasInstance instance = {};
-    //     instance.blas        = &translucent_cube_blas;
-
-    //     XMMATRIX transform = XMMatrixScaling(cube_scale, cube_scale, cube_scale) * XMMatrixRotationZ(0.5*TAU + TAU/24) * XMMatrixRotationX(TAU/24) * XMMatrixTranslation(-0.15,0,0);
-    //     XMStoreFloat4x4(&instance.transform, transform);
-
-    //     array_push(&instances, instance);
-    // };
-    // { // translucent cube #2
-    //     const float cube_scale = 0.1;
-    //     BlasInstance instance = {};
-    //     instance.blas        = &translucent_cube_blas;
-
-    //     XMMATRIX transform = XMMatrixScaling(cube_scale, cube_scale, cube_scale) * XMMatrixRotationZ(-TAU/24) * XMMatrixRotationX(-TAU/24) * XMMatrixTranslation(0.15,0,0);
-    //     XMStoreFloat4x4(&instance.transform, transform);
-
-    //     array_push(&instances, instance);
-    // };
 
     // finalize raytracing geometry and update descriptors
     Raytracing::build_tlas(cmd_list, instances);

@@ -224,10 +224,10 @@ void lambert_chit(inout RayPayload payload, Attributes attr) {
     spec = spec/(4.0f * dot_nl * dot(incoming, normal));
     spec = spec * dot_nl;   //solid angle
 
-    float diffuse = l.color;    //lambert
+    float3 diffuse = l.color;    //lambert
     diffuse = diffuse * dot_nl; //solid angle
 
-    float3 brdf = fresnel*spec +  (1.0f-fresnel)*(l.color * dot_nl);
+    float3 brdf = fresnel*spec +  (1.0f-fresnel)*diffuse;
 
     payload.scatter     = outgoing;
     payload.reflectance = brdf;

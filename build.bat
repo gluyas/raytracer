@@ -50,7 +50,7 @@ cl ^
     ^
     -Ilib -Ilib\imgui -I. ^
     -DCPP -DUNICODE -DDEBUG ^
-    src\geometry.cpp src\parse_obj.cpp src\bluenoise.cpp src\device.cpp src\raytracing.cpp src\main.cpp ^
+    src\geometry.cpp src\parse_obj.cpp src\bluenoise.cpp src\device.cpp src\raytracing.cpp src\main.cpp src\mesh_gen.cpp ^
     ^
     out\lib.lib ^
     user32.lib ^

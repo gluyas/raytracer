@@ -5,7 +5,7 @@
 // C++ INCLUDES
 #ifdef CPP
 
-// sytem libraries
+// system libraries
 
 #include <ctype.h>
 #include <stdlib.h>
@@ -33,6 +33,7 @@ using namespace DirectX;
 // third-party libraries
 
 #include "d3dx12.h"
+#include "DDSTextureLoader.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
@@ -93,6 +94,7 @@ typedef UINT16 Index;
 struct Vertex {
     COMMON_FLOAT3 position;
     COMMON_FLOAT3 normal;
+    COMMON_FLOAT2 uv;
 };
 
 struct SamplePoint {

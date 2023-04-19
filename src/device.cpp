@@ -90,6 +90,43 @@ D3D12_GPU_DESCRIPTOR_HANDLE get_gpu_descriptor_handle(DescriptorHandle cbv_srv_u
 
 // buffer helpers
 
+//this is copying the create_texture but I want to learn how to use this
+
+ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, D3D12_PLACED_SUBRESOURCE_FOOTPRINT* footprint, ArrayView<void> data) {
+    ID3D12Resource* texture = NULL;
+    //create default heap
+    const D3D12_RESOURCE_DESC *RESOURCE_DESC = &CD3DX12_RESOURCE_DESC::Tex2D(
+        footprint->Footprint.Format, 
+        footprint->Footprint.Width, 
+        footprint->Footprint.Height
+    );
+    CHECK_RESULT(g_device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+        RESOURCE_DESC, D3D12_RESOURCE_STATE_COPY_DEST,
+        NULL,
+        IID_PPV_ARGS(&texture)
+    ));
+    //create upload heap
+    ID3D12Resource* upload;
+    CHECK_RESULT(g_device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
+        &CD3DX12_RESOURCE_DESC::Buffer(data.len), D3D12_RESOURCE_STATE_GENERIC_READ,
+        NULL,
+        IID_PPV_ARGS(&upload)
+    ));
+    //copy to upload heap
+    void* upload_dst;
+    CHECK_RESULT(upload->Map(0, &CD3DX12_RANGE(0, data.len), &upload_dst));
+    memmove(upload_dst, data.ptr, data.len);
+
+    //CD3DX12_TEXTURE_COPY_LOCATION(&texture);
+    cmd_list->CopyTextureRegion(&CD3DX12_TEXTURE_COPY_LOCATION(texture), 0, 0, 0, &CD3DX12_TEXTURE_COPY_LOCATION(upload, *footprint), NULL);
+    cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+    return texture;
+}
+
+//
+
 ID3D12Resource* create_buffer(UINT64 size_in_bytes, D3D12_RESOURCE_STATES initial_state, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS flags) {
     ID3D12Resource* buffer;
     if (initial_state & D3D12_RESOURCE_STATE_UNORDERED_ACCESS)                  flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
