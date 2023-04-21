@@ -9,14 +9,16 @@ GlobalRootSignature global_root_signature = {    // SLOT : RESOURCE
     "DescriptorTable(UAV(u0, numDescriptors = 2))," // 1 : { g_render_target, g_sample_accumulator }
     "SRV(t0),"                                      // 2 : g_scene
 
+    "DescriptorTable(SRV(t7), numDescriptors = unbounded)"                                      // 3 : g_texture
+
     // translucent materials
-    "DescriptorTable("                              // 3 : {
+    "DescriptorTable("                              // 4 : {
         "SRV(t3, numDescriptors = 2),"              //     g_translucent_bssrdf, g_translucent_properties,
         "SRV(t6, numDescriptors = unbounded,"       //     g_translucent_samples
             "flags = DESCRIPTORS_VOLATILE)"
     "),"                                            // }
 
-    "DescriptorTable("                              // 4: {
+    "DescriptorTable("                              // 5: {
         "SRV(t5, numdescriptors = 1),"              //     g_write_translucent_indices
         "UAV(u5, numDescriptors = unbounded,"       //     g_write_translucent_samples -> [2*i + 0]
             "offset = 1,"
@@ -217,7 +219,7 @@ void lambert_chit(inout RayPayload payload, Attributes attr) {
     float transmitted_index = g.translucent_refractive_index;
 
     float fresnel = F(outgoing, normal, incident_index, transmitted_index);
-    float spec = 
+    float spec =
         GGX(m_normal, normal, roughness) *
         G1(incoming, m_normal, normal, roughness) * G1(outgoing, m_normal, normal, roughness) *
         F(outgoing, m_normal, incident_index, transmitted_index);

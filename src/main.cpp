@@ -247,7 +247,7 @@ int WINAPI wWinMain(
         Array<const char*> files = {};
         array_push(&files, "data/cornell/luminaire.obj");
         mesh_load(files, cornell_aabb, Material{Shader::Light, { 50.0, 50.0, 50.0 }}, geometries, all_vertices, all_indices);
-        
+
         files = {};
         array_push(&files, "data/cornell/floor.obj");
         array_push(&files, "data/cornell/back.obj");
@@ -261,10 +261,13 @@ int WINAPI wWinMain(
         files = {};
         array_push(&files, "data/cornell/greenwall.obj");
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 0.0, 1.0, 0.0 }}, geometries, all_vertices, all_indices);
-        
+
         files = {};
         array_push(&files, "data/sphere_Tex.obj");
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 1.0, 1.0 }}, geometries, all_vertices, all_indices);
+
+
+
 
         cornell_blas = Raytracing::build_blas(cmd_list, geometries);
 

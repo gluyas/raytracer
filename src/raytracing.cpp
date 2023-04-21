@@ -36,6 +36,8 @@ ID3D12Resource* g_scene = NULL;
 UINT g_bssrdf_tabulations = 0;
 ID3D12Resource* g_bssrdf = NULL;
 
+ID3D12Resource* g_texture = NULL;
+
 Array<ShaderRecord> g_shader_table = {};
 ID3D12Resource*     g_shader_table_buffer = NULL;
 Array<RootArgument> g_root_args = {};
@@ -138,6 +140,17 @@ void init(ID3D12GraphicsCommandList* cmd_list) {
         g_bssrdf = create_texture_and_write_contents(cmd_list, D3D12_RESOURCE_DIMENSION_TEXTURE1D, &bssrdf_footprint, bssrdf, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, NULL);
         SET_NAME(g_bssrdf);
     }
+
+    { // g_texture
+        const UINT8 data[] = {};
+
+        D3D12_PLACED_SUBRESOURCE_FOOTPRINT bssrdf_footprint = {};
+        bssrdf_footprint.Footprint.Format = DXGI_FORMAT_R32G32B32_FLOAT;
+        bssrdf_footprint.Footprint.Width  = g_bssrdf_tabulations;
+        bssrdf_footprint.Footprint.Height = 1;
+        bssrdf_footprint.Footprint.Depth  = 1;
+        bssrdf_footprint.Footprint.RowPitch = __countof(data);
+    }
 }
 
 void update_resolution(UINT width, UINT height) {
@@ -207,6 +220,23 @@ UINT update_descriptors(DescriptorHandle dest_array) {
     // g_scene
     if (g_scene) array_push(&g_root_args, RootArgument::srv(g_scene->GetGPUVirtualAddress()));
     else         array_push(&g_root_args, {});
+
+    // texture descriptor table
+    array_push(&g_root_args, RootArgument::descriptor_table(dest_array + descriptors_count)); {
+        for ( texture : texures) {
+            D3D12_SHADER_RESOURCE_VIEW_DESC desc = {};
+            desc.Format                  = DXGI_FORM;
+            desc.ViewDimension           = D3D10_1_SRV_DIMENSION_TEXTURE2D;
+            desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+
+            desc.Buffer.FirstElement        = 0;
+            desc.Buffer.NumElements         = array_size;
+            desc.Buffer.StructureByteStride = sizeof(*g_translucent_properties.ptr);
+
+            g_device->CreateShaderResourceView(texture_resource, &desc, dest_array + descriptors_count);
+            descriptors_count += 1;
+        }
+    }
 
     // translucent descriptor table
     array_push(&g_root_args, RootArgument::descriptor_table(dest_array + descriptors_count)); {
