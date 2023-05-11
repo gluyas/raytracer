@@ -92,21 +92,22 @@ D3D12_GPU_DESCRIPTOR_HANDLE get_gpu_descriptor_handle(DescriptorHandle cbv_srv_u
 
 //this is copying the create_texture but I want to learn how to use this
 
-ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, D3D12_PLACED_SUBRESOURCE_FOOTPRINT* footprint, ArrayView<void> data) {
+ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, wchar_t* filepath) {
     ID3D12Resource* texture = NULL;
-    //create default heap
-    const D3D12_RESOURCE_DESC *RESOURCE_DESC = &CD3DX12_RESOURCE_DESC::Tex2D(
-        footprint->Footprint.Format, 
-        footprint->Footprint.Width, 
-        footprint->Footprint.Height
-    );
-    CHECK_RESULT(g_device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
-        RESOURCE_DESC, D3D12_RESOURCE_STATE_COPY_DEST,
-        NULL,
-        IID_PPV_ARGS(&texture)
-    ));
+    //subresources
+    std::vector<D3D12_SUBRESOURCE_DATA> subresources;
+    std::unique_ptr<uint8_t[]> ddsData;
+
+    /*
+    * if (&geometry.dds_filepath != nullptr) {
+    *   CHECK_RESULT(LoadDDSTextureFromFile(g_device, &geometry.dds_filepath, &texture, ddsData, subresources));
+    *   free(&geometry.dds_filepath);
+    * }
+    */
+
     //create upload heap
+    //find upload buffer size https://github.com/microsoft/DirectXTK12/wiki/DDSTextureLoader
+
     ID3D12Resource* upload;
     CHECK_RESULT(g_device->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
@@ -114,10 +115,23 @@ ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, D3D12_PLACED
         NULL,
         IID_PPV_ARGS(&upload)
     ));
+
+    UpdateSubresources(cmd_list, &texture, &upload, 0, 0, static_cast<UINT>(subresources.size()), subresources.data());
+
+    //create default heap
+    CHECK_RESULT(g_device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+        RESOURCE_DESC, D3D12_RESOURCE_STATE_COPY_DEST,
+        NULL,
+        IID_PPV_ARGS(&texture)
+    ));
+
     //copy to upload heap
     void* upload_dst;
     CHECK_RESULT(upload->Map(0, &CD3DX12_RANGE(0, data.len), &upload_dst));
     memmove(upload_dst, data.ptr, data.len);
+
+    //update subresource
 
     //CD3DX12_TEXTURE_COPY_LOCATION(&texture);
     cmd_list->CopyTextureRegion(&CD3DX12_TEXTURE_COPY_LOCATION(texture), 0, 0, 0, &CD3DX12_TEXTURE_COPY_LOCATION(upload, *footprint), NULL);

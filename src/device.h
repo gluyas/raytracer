@@ -1,4 +1,6 @@
 #pragma once
+#include <vector>
+
 #include "prelude.h"
 
 struct Fence {

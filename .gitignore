@@ -1,4 +1,6 @@
 out/
 captures/
 
+.vs/
+
 imgui.ini

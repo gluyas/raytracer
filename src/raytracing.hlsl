@@ -51,11 +51,22 @@ LocalRootSignature local_root_signature = {
     "RootConstants(b1, num32BitConstants = 4)," // 0: l
     "SRV(t1),"                                  // 1: l_vertices
     "SRV(t2),"                                  // 2: l_indices
+    //textures
+    /*
+    * "SRV(t3),"
+    * "StaticSampler(s1, filter=MIN_MAG_MIP_LINEAR, addressU=Wrap, addressV=Wrap),"
+    */
 };
 
 StructuredBuffer<Vertex>         l_vertices : register(t1);
 ByteAddressBuffer                l_indices  : register(t2);
 ConstantBuffer<RaytracingLocals> l          : register(b1);
+
+//textures
+/*
+* Texture2D<float4> Tex : register(t3);   //no mipmaps for now
+* sampler TexSampler : register(s1);
+*/
 
 inline float3 get_world_space_normal(uint3 triangle_indices, float2 barycentrics) {
     float3 normal;

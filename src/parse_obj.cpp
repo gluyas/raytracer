@@ -25,6 +25,63 @@ end:
     return i;
 }
 
+void parse_filepath(char** char_buf, wchar_t* output) {
+    char* filepath = *char_buf;
+    char* reader = filepath;
+    for (int i = 0; *reader != '\n'; i++) {
+        if (*reader == '\0') {
+            printf("error! end of file reached prematurely");
+            free(output);
+        }
+        output[i] = *reader;
+        reader++;
+    }
+}
+
+void parse_mtl_file(const char* filename, Material* mat, wchar_t* dds_filepath) {
+    FILE* file = fopen(filename, "r");
+    const UINT64 char_buf_len = 64;
+    char* char_buf = (char*) malloc(char_buf_len * sizeof(char));
+
+    float roughness;
+    float refraction;
+
+    while (!feof(file)) {
+        char* line = fgets(char_buf, char_buf_len, file);
+        int error = ferror(file);
+        if (error) {
+            fprintf(stderr, "error reading obj file");
+            free(char_buf);
+            exit(error);
+        }
+        if (!line) break; // end of file
+
+        if (line[0] == 'N') {
+            if (line[1] == 's') {   //read Ns
+                assert(parse_floats(&line, 1, (float*) &roughness) == 1);
+            }
+            if (line[1] == 'i') {   //read Ni
+                assert(parse_floats(&line, 1, (float*)&refraction) == 1);
+            }
+        }
+        
+        //read map_Kd
+        if (strncmp(line, "map_Kd", 5) != 0) {
+            //LoadDDSTextureFromFile();
+            //load file from file path
+            dds_filepath = (wchar_t*)malloc(256 * sizeof(wchar_t));
+            parse_filepath(&line, dds_filepath);
+        }
+    }
+    free(char_buf);
+    fclose(file);
+
+    mat->info.roughness = roughness;
+    mat->info.index_refraction = refraction;
+
+    //free(filepath);
+}
+
 void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* vertices, Array<Index>* indices, Aabb* aabb) {
     FILE* file = fopen(filename, "rb");
 

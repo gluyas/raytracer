@@ -244,32 +244,36 @@ int WINAPI wWinMain(
         Array<GeometryInstance> geometries = {};
         Array<Array<Vertex>> all_vertices = {};
         Array<Array<Index>>  all_indices  = {};
-        Array<const char*> files = {};
-        array_push(&files, "data/cornell/luminaire.obj");
+        //Array<std::unique_ptr<uint8_t[]>> all_textures = {};
+
+        Array<MeshFilePaths> files = {};
+        array_push(&files, MeshFilePaths{ "data/cornell/luminaire.obj", ""});
         mesh_load(files, cornell_aabb, Material{Shader::Light, { 50.0, 50.0, 50.0 }}, geometries, all_vertices, all_indices);
         
         files = {};
-        array_push(&files, "data/cornell/floor.obj");
-        array_push(&files, "data/cornell/back.obj");
-        array_push(&files, "data/cornell/ceiling.obj");
+        array_push(&files, MeshFilePaths{ "data/cornell/floor.obj", "" });
+        array_push(&files, MeshFilePaths{ "data/cornell/back.obj", "" });
+        array_push(&files, MeshFilePaths{ "data/cornell/ceiling.obj", "" });
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 1.0, 1.0 }}, geometries, all_vertices, all_indices);
 
         files = {};
-        array_push(&files, "data/cornell/redwall.obj");
+        array_push(&files, MeshFilePaths{ "data/cornell/redwall.obj", "" });
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 0.0, 0.0 }}, geometries, all_vertices, all_indices);
 
         files = {};
-        array_push(&files, "data/cornell/greenwall.obj");
+        array_push(&files, MeshFilePaths{ "data/cornell/greenwall.obj", "" });
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 0.0, 1.0, 0.0 }}, geometries, all_vertices, all_indices);
         
         files = {};
-        array_push(&files, "data/sphere_Tex.obj");
+        //for now assume if mtl exists there's only one obj being loaded
+        array_push(&files, MeshFilePaths{ "data/tex/sphere_tex.obj", "data/tex/sphere_tex.mtl" });
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 1.0, 1.0 }}, geometries, all_vertices, all_indices);
 
         cornell_blas = Raytracing::build_blas(cmd_list, geometries);
 
         for (auto& v : all_vertices) array_free(&v); array_free(&all_vertices);
         for (auto& i : all_indices)  array_free(&i); array_free(&all_indices);
+        //for (auto& t : all_textures) t.release(); array_free(&all_textures);
         array_free(&geometries);
 
         // append instance

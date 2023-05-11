@@ -91,6 +91,11 @@ typedef UINT16 Index;
 
 // shared typedefs
 
+struct MaterialInfo {
+    COMMON_FLOAT roughness;
+    COMMON_FLOAT index_refraction;
+};
+
 struct Vertex {
     COMMON_FLOAT3 position;
     COMMON_FLOAT3 normal;
