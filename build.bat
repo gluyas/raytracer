@@ -48,13 +48,14 @@ cl ^
     -Zi -EHsc ^
     -Foout\ -Fdout\ -Feout\raytracer ^
     ^
+    -Ilib -Ilib\DDSTextureLoader -I. ^
     -Ilib -Ilib\imgui -I. ^
     -DCPP -DUNICODE -DDEBUG ^
     src\geometry.cpp src\parse_obj.cpp src\bluenoise.cpp src\device.cpp src\raytracing.cpp src\main.cpp src\mesh_gen.cpp ^
     ^
     out\lib.lib ^
     user32.lib ^
-    d3d12.lib dxgi.lib d3dcompiler.lib ^
+    d3d12.lib dxgi.lib dxguid.lib d3dcompiler.lib ^
     ^
     -link -NOLOGO
 if %ERRORLEVEL% neq 0 ( exit /b %ERRORLEVEL% )

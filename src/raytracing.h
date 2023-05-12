@@ -14,7 +14,6 @@ __declspec(align(32)) struct ShaderRecord {
     RaytracingLocals            locals;
     D3D12_GPU_VIRTUAL_ADDRESS   vertices;
     D3D12_GPU_VIRTUAL_ADDRESS   indices;
-    D3D12_GPU_VIRTUAL_ADDRESS   texture;
 };
 
 enum Shader {
@@ -29,7 +28,6 @@ struct Material {
     Shader   shader;
     XMFLOAT3 color;
     MaterialInfo info = {0.1f, 1.5f};
-    //char* filepath;
 };
 
 struct GeometryInstance {
@@ -43,7 +41,6 @@ struct Blas {
     ID3D12Resource* blas;
     ID3D12Resource* vb;
     ID3D12Resource* ib;
-    ID3D12Resource* tex;
 
     UINT shader_table_index;
     UINT translucent_ids_index, translucent_ids_count; // used to duplicate sample points if necessary

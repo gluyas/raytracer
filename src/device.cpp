@@ -98,47 +98,29 @@ ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, wchar_t* fil
     std::vector<D3D12_SUBRESOURCE_DATA> subresources;
     std::unique_ptr<uint8_t[]> ddsData;
 
-    /*
-    * if (&geometry.dds_filepath != nullptr) {
-    *   CHECK_RESULT(LoadDDSTextureFromFile(g_device, &geometry.dds_filepath, &texture, ddsData, subresources));
-    *   free(&geometry.dds_filepath);
-    * }
-    */
+    //default heap created here
+    if (filepath != nullptr) {
+       CHECK_RESULT(LoadDDSTextureFromFile(g_device, filepath, &texture, ddsData, subresources));
+       free(filepath);
+    }
 
     //create upload heap
-    //find upload buffer size https://github.com/microsoft/DirectXTK12/wiki/DDSTextureLoader
+    const uint64_t buffer_size = GetRequiredIntermediateSize(texture, 0, (UINT)subresources.size());
 
     ID3D12Resource* upload;
     CHECK_RESULT(g_device->CreateCommittedResource(
         &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
-        &CD3DX12_RESOURCE_DESC::Buffer(data.len), D3D12_RESOURCE_STATE_GENERIC_READ,
+        &CD3DX12_RESOURCE_DESC::Buffer(buffer_size), D3D12_RESOURCE_STATE_GENERIC_READ,
         NULL,
         IID_PPV_ARGS(&upload)
     ));
 
-    UpdateSubresources(cmd_list, &texture, &upload, 0, 0, static_cast<UINT>(subresources.size()), subresources.data());
-
-    //create default heap
-    CHECK_RESULT(g_device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
-        RESOURCE_DESC, D3D12_RESOURCE_STATE_COPY_DEST,
-        NULL,
-        IID_PPV_ARGS(&texture)
-    ));
-
-    //copy to upload heap
-    void* upload_dst;
-    CHECK_RESULT(upload->Map(0, &CD3DX12_RANGE(0, data.len), &upload_dst));
-    memmove(upload_dst, data.ptr, data.len);
-
-    //update subresource
-
-    //CD3DX12_TEXTURE_COPY_LOCATION(&texture);
-    cmd_list->CopyTextureRegion(&CD3DX12_TEXTURE_COPY_LOCATION(texture), 0, 0, 0, &CD3DX12_TEXTURE_COPY_LOCATION(upload, *footprint), NULL);
+    //this does map()
+    UpdateSubresources(cmd_list, texture, upload, 0, 0, (UINT)(subresources.size()), subresources.data());
+    
     cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
     return texture;
 }
-
 //
 
 ID3D12Resource* create_buffer(UINT64 size_in_bytes, D3D12_RESOURCE_STATES initial_state, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS flags) {

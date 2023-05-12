@@ -325,7 +325,6 @@ Blas build_blas(
 
     Array<Vertex> vertices = {};
     Array<Index>  indices  = {};
-    std::unique_ptr<uint8_t[]> texture = {};
 
     Array<D3D12_RAYTRACING_GEOMETRY_DESC> geometry_descs = array_init<D3D12_RAYTRACING_GEOMETRY_DESC>(geometries.len);
 
@@ -336,11 +335,16 @@ Blas build_blas(
 
             shader_record.locals.color          = geometry.material.color;
             shader_record.locals.translucent_id = -1; // generate translucent properties after mesh upload
+            //upload texture and get GPUAddress
+            ID3D12Resource* tex_resc;
+            tex_resc = (geometry.dds_filepath != nullptr) ?
+                tex_resc = create_texture(cmd_list, dds_filepath) : 
+                tex_resc = create_texture(cmd_list, "Add default texture for this mesh with alpha value of 1.0 so geometry color goes through instead");
+            shader_record.locals.texture =  tex_resc;
 
             // later increment by gpu virtual addresses of vb and ib
             shader_record.vertices = 0;
             shader_record.indices  = array_len_in_bytes(&indices);
-            shader_record.texture = sizeof(uint8_t);//array_len_in_bytes(&texture);
         };
         array_push(&g_shader_table, shader_record);
 
@@ -365,15 +369,6 @@ Blas build_blas(
             array_push(&indices, (Index)  (vertices.len + index));
         }
         array_concat(&vertices, &geometry.vertices);
-
-        //load texture here?
-        /*ID3D12Resource* tex_resc;
-       ID3D12Resource* tex_resc;
-        std::vector<D3D12_SUBRESOURCE_DATA> subresources;
-        if (&geometry.dds_filepath != nullptr) {
-            CHECK_RESULT(LoadDDSTextureFromFile(Device::g_device, &geometry.dds_filepath, tex_resc, ddsData, subresources));
-            free(&geometry.dds_filepath);
-        }*/
     }
     if (vertices.len > INDEX_MAX) abort();
 
@@ -382,11 +377,6 @@ Blas build_blas(
     SET_NAME(blas.vb);
     blas.ib = create_buffer_and_write_contents(cmd_list, indices,  D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE, Device::push_uninitialized_temp_resource(temp_resources));
     SET_NAME(blas.ib);
-    //ID3D12Resource* tex = create_texture(cmd_list, Device::push_uninitialized_temp_resource(temp_resources), texture);
-    //upload texture to gpu and get virtual address
-    //blas.tex = create_texture(cmd_list, Device::push_uninitialized_temp_resource(temp_resources), texture);
-    //blas.tex = create_texture(cmd_list, tex_resc, texture);
-    //SET_NAME(blas.tex);
 
     // final geometry pass
     ArrayView<ShaderRecord> shader_records = array_slice_from(&g_shader_table, blas.shader_table_index);
@@ -418,9 +408,6 @@ Blas build_blas(
         // update shader table
         shader_records[i].vertices += blas.vb->GetGPUVirtualAddress();
         shader_records[i].indices  += blas.ib->GetGPUVirtualAddress();
-        //shader_records[i].texture  += tex;
-        //shader_records[i].texture  += blas.tex->GetGPUVirtualAddress();
-        //update texture
 
         geometry_descs[i].Triangles.VertexBuffer.StartAddress += blas.vb->GetGPUVirtualAddress();
         geometry_descs[i].Triangles.IndexBuffer               += blas.ib->GetGPUVirtualAddress();
@@ -459,7 +446,7 @@ Blas build_blas(
     // cleanup
     array_free(&vertices);
     array_free(&indices);
-    texture.release();
+    filepaths.clear();
     array_free(&geometry_descs);
 
     return blas;
