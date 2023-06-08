@@ -25,7 +25,7 @@ end:
     return i;
 }
 
-void parse_filepath(char** char_buf, wchar_t* output) {
+void parse_filepath(char** char_buf, char* output) {
     char* filepath = *char_buf;
     char* reader = filepath;
     for (int i = 0; *reader != '\n'; i++) {
@@ -38,7 +38,7 @@ void parse_filepath(char** char_buf, wchar_t* output) {
     }
 }
 
-void parse_mtl_file(const char* filename, Material* mat, wchar_t* dds_filepath) {
+void parse_mtl_file(const char* filename, Material* mat, char* img_filepath) {
     FILE* file = fopen(filename, "r");
     const UINT64 char_buf_len = 64;
     char* char_buf = (char*) malloc(char_buf_len * sizeof(char));
@@ -67,10 +67,9 @@ void parse_mtl_file(const char* filename, Material* mat, wchar_t* dds_filepath) 
         
         //read map_Kd
         if (strncmp(line, "map_Kd", 5) != 0) {
-            //LoadDDSTextureFromFile();
             //load file from file path
-            dds_filepath = (wchar_t*)malloc(256 * sizeof(wchar_t));
-            parse_filepath(&line, dds_filepath);
+            img_filepath = (char*)malloc(256 * sizeof(char));
+            parse_filepath(&line, img_filepath);
         }
     }
     free(char_buf);

@@ -84,7 +84,7 @@ void push_temp_resource(ID3D12Resource* resource, Array<ID3D12Resource*>* temp_r
 void release_temp_resources(Array<ID3D12Resource*>* temp_resources = NULL);
 
 } // namespace Device
-
+ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, char* filepath, D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle);
 ID3D12Resource* create_buffer(UINT64 size_in_bytes, D3D12_RESOURCE_STATES initial_state, D3D12_HEAP_TYPE heap_type = D3D12_HEAP_TYPE_DEFAULT, D3D12_RESOURCE_FLAGS flags = D3D12_RESOURCE_FLAG_NONE);
 ID3D12Resource* create_upload_buffer(UINT64 size_in_bytes);
 ID3D12Resource* create_upload_buffer(ArrayView<void> data);

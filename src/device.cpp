@@ -1,5 +1,9 @@
 #include "device.h"
 
+//for stb image to work 
+#define STB_IMAGE_IMPLEMENTATION
+#include "stb_image.h"
+
 namespace Device {
 
 ID3D12Device5* g_device;
@@ -90,39 +94,6 @@ D3D12_GPU_DESCRIPTOR_HANDLE get_gpu_descriptor_handle(DescriptorHandle cbv_srv_u
 
 // buffer helpers
 
-//this is copying the create_texture but I want to learn how to use this
-
-ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, wchar_t* filepath) {
-    ID3D12Resource* texture = NULL;
-    //subresources
-    std::vector<D3D12_SUBRESOURCE_DATA> subresources;
-    std::unique_ptr<uint8_t[]> ddsData;
-
-    //default heap created here
-    if (filepath != nullptr) {
-       CHECK_RESULT(LoadDDSTextureFromFile(g_device, filepath, &texture, ddsData, subresources));
-       free(filepath);
-    }
-
-    //create upload heap
-    const uint64_t buffer_size = GetRequiredIntermediateSize(texture, 0, (UINT)subresources.size());
-
-    ID3D12Resource* upload;
-    CHECK_RESULT(g_device->CreateCommittedResource(
-        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
-        &CD3DX12_RESOURCE_DESC::Buffer(buffer_size), D3D12_RESOURCE_STATE_GENERIC_READ,
-        NULL,
-        IID_PPV_ARGS(&upload)
-    ));
-
-    //this does map()
-    UpdateSubresources(cmd_list, texture, upload, 0, 0, (UINT)(subresources.size()), subresources.data());
-    
-    cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
-    return texture;
-}
-//
-
 ID3D12Resource* create_buffer(UINT64 size_in_bytes, D3D12_RESOURCE_STATES initial_state, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS flags) {
     ID3D12Resource* buffer;
     if (initial_state & D3D12_RESOURCE_STATE_UNORDERED_ACCESS)                  flags |= D3D12_RESOURCE_FLAG_ALLOW_UNORDERED_ACCESS;
@@ -154,6 +125,106 @@ void create_or_check_capacity_of_temp_buffer(ID3D12Resource*** temp_buffer, UINT
     } else {
         if ((**temp_buffer)->GetDesc().Width < size) abort();
     }
+}
+
+//parse image then upload to GPU assuming 1 1024x1024 RGBA image with no additional mipmaps
+ID3D12Resource* create_texture(ID3D12GraphicsCommandList* cmd_list, char* filepath, D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle) {
+    //load file
+    int height = 1024, width = 1024, channel_num = 4; //4 channels RGBA
+    //unsigned char *img_data = stbi_load(filepath, &width, &height, &channel_num, channel_num);
+    void* img_data = malloc(height*height* channel_num *sizeof(char));
+    //texture description
+    D3D12_RESOURCE_DESC tex_desc = {0};
+    tex_desc.MipLevels = 1;
+    tex_desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+    tex_desc.Width = width;
+    tex_desc.Height = height;
+    tex_desc.Flags = D3D12_RESOURCE_FLAG_NONE;
+    tex_desc.Dimension = D3D12_RESOURCE_DIMENSION_TEXTURE2D;
+    tex_desc.DepthOrArraySize = 1;
+    tex_desc.SampleDesc.Count = 1;
+    tex_desc.SampleDesc.Quality = 0;
+    //create default heap
+    ID3D12Resource* texture = NULL;
+    CHECK_RESULT(g_device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_DEFAULT), D3D12_HEAP_FLAG_NONE,
+        &tex_desc, D3D12_RESOURCE_STATE_COPY_DEST,
+        NULL,
+        IID_PPV_ARGS(&texture)
+    ));
+    //calculate size
+    UINT num_subresources = tex_desc.DepthOrArraySize * tex_desc.MipLevels;   //have only 1 mipmap for now
+    UINT64 size_in_bytes = GetRequiredIntermediateSize(texture,0, num_subresources);
+    
+
+    //create upload heap
+    ID3D12Resource* upload = NULL;
+    CHECK_RESULT(g_device->CreateCommittedResource(
+        &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
+        &CD3DX12_RESOURCE_DESC::Buffer(size_in_bytes), D3D12_RESOURCE_STATE_GENERIC_READ,
+        nullptr,
+        IID_PPV_ARGS(&upload)
+    ));
+
+    //define subresources
+    D3D12_SUBRESOURCE_DATA tex_subresources = {};
+    tex_subresources.pData = img_data;
+    tex_subresources.RowPitch = static_cast<LONG_PTR>((4 * width));; //width
+    tex_subresources.SlicePitch = tex_subresources.RowPitch*height;  //height
+
+    UpdateSubresources(cmd_list, texture, upload, 0, 0, num_subresources, &tex_subresources);
+    //upload to GPU
+    cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_PIXEL_SHADER_RESOURCE));
+    //define sampler
+    //create SRV
+    /*D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+    srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
+    srv_desc.Format = tex_desc.Format;
+    srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    srv_desc.Texture2D.MipLevels = 1;
+    g_device->CreateShaderResourceView(texture, &srv_desc, desc_heap_handle);
+    desc_heap_handle.Offset();*/
+    return texture;
+    //create_or_check_capacity_of_temp_buffer(&upload_buffer, data.len, D3D12_RESOURCE_STATE_GENERIC_READ, D3D12_HEAP_TYPE_UPLOAD);
+
+    /*copy_to_upload_buffer(*upload_buffer, img_data);
+
+    // copy to default resource
+    D3D12_TEXTURE_COPY_LOCATION dst = CD3DX12_TEXTURE_COPY_LOCATION(texture);
+    D3D12_TEXTURE_COPY_LOCATION src = CD3DX12_TEXTURE_COPY_LOCATION(*upload_buffer, *footprint);
+
+    cmd_list->CopyTextureRegion(&dst, 0, 0, 0, &src, NULL);
+    cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture, D3D12_RESOURCE_STATE_COPY_DEST, initial_state));
+    return texture;*/
+
+    //subresources
+
+    //sampler description
+
+
+    //default heap created here
+    /*if (filepath != NULL) {
+        //std::cout << filepath << std::endl;
+        //CHECK_RESULT(LoadDDSTextureFromFile(g_device, filepath, &texture, ddsData, subresources));
+        //auto value = LoadDDSTextureFromFile(g_device, filepath, &texture, ddsData, subresources);
+       CHECK_RESULT(value);
+       //create upload heap
+       const UINT64 buffer_size = GetRequiredIntermediateSize(texture, 0, static_cast<UINT>(subresources.size()));
+       ID3D12Resource* upload;
+       CHECK_RESULT(g_device->CreateCommittedResource(
+           &CD3DX12_HEAP_PROPERTIES(D3D12_HEAP_TYPE_UPLOAD), D3D12_HEAP_FLAG_NONE,
+           &CD3DX12_RESOURCE_DESC::Buffer(buffer_size), D3D12_RESOURCE_STATE_GENERIC_READ,
+           NULL,
+           IID_PPV_ARGS(&upload)
+       ));
+       UpdateSubresources(cmd_list, texture, upload, 0, 0, (UINT)(subresources.size()), subresources.data());  //this does map()
+       cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(texture, D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE));
+       
+       
+    }*/
+    free(filepath);
+    free(img_data);
+    return texture;
 }
 
 ID3D12Resource* create_buffer_and_write_contents(ID3D12GraphicsCommandList* cmd_list, ArrayView<void> data, D3D12_RESOURCE_STATES initial_state, ID3D12Resource** upload_buffer, D3D12_HEAP_TYPE heap_type, D3D12_RESOURCE_FLAGS flags) {
@@ -237,6 +308,7 @@ ID3D12Resource* create_texture_and_write_contents(ID3D12GraphicsCommandList* cmd
     desc.DepthOrArraySize = footprint->Footprint.Depth;
     desc.Layout           = D3D12_TEXTURE_LAYOUT_UNKNOWN;
     // TODO: support multiple mip levels
+
     desc.MipLevels          = 1;
     desc.SampleDesc.Count   = 1;
     desc.SampleDesc.Quality = 0;

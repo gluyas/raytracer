@@ -48,7 +48,6 @@ cl ^
     -Zi -EHsc ^
     -Foout\ -Fdout\ -Feout\raytracer ^
     ^
-    -Ilib -Ilib\DDSTextureLoader -I. ^
     -Ilib -Ilib\imgui -I. ^
     -DCPP -DUNICODE -DDEBUG ^
     src\geometry.cpp src\parse_obj.cpp src\bluenoise.cpp src\device.cpp src\raytracing.cpp src\main.cpp src\mesh_gen.cpp ^

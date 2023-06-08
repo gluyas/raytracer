@@ -70,6 +70,8 @@ UINT                       g_max_translucent_samples_count = 0;
 bool g_enable_translucent_sample_collection = true;
 bool g_enable_subsurface_scattering         = true;
 
+//const char* DEFAULT_TEX_PATH = L"data/tex/checkerboard.dds";    //used for meshes that don't have defined texture
+
 void init(ID3D12GraphicsCommandList* cmd_list) {
     { // g_pso, g_properties
         auto pso_desc = CD3DX12_STATE_OBJECT_DESC(D3D12_STATE_OBJECT_TYPE_RAYTRACING_PIPELINE);
@@ -310,12 +312,20 @@ UINT update_descriptors(DescriptorHandle dest_array) {
         descriptors_count += array_size;
     }
 
+    //local descriptor table??????????
+    //D3D12_SHADER_RESOURCE_VIEW_DESC srv_desc = {};
+    //srv_desc.Format = tex_desc.Format;
+    //srv_desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+    //srv_desc.Texture2D.MipLevels = 1;
+    //CHECK_RESULT(g_device->CreateShaderResourceView(texture, &srv_desc, dest_array + descriptors_count));
+
     return descriptors_count;
 }
 
 Blas build_blas(
     ID3D12GraphicsCommandList4* cmd_list,
     ArrayView<GeometryInstance> geometries,
+    D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle,
     Array<ID3D12Resource*>* temp_resources
 ) {
     Blas blas = {};
@@ -335,16 +345,15 @@ Blas build_blas(
 
             shader_record.locals.color          = geometry.material.color;
             shader_record.locals.translucent_id = -1; // generate translucent properties after mesh upload
-            //upload texture and get GPUAddress
-            ID3D12Resource* tex_resc;
-            tex_resc = (geometry.dds_filepath != nullptr) ?
-                tex_resc = create_texture(cmd_list, dds_filepath) : 
-                tex_resc = create_texture(cmd_list, "Add default texture for this mesh with alpha value of 1.0 so geometry color goes through instead");
-            shader_record.locals.texture =  tex_resc;
+            
+            //tex_resc = (geometry.img_filepath != NULL) ?
+            //    tex_resc = create_texture(cmd_list, geometry.img_filepath) :
+            //    tex_resc = create_texture(cmd_list, "data/tex/checkboard.png");
 
             // later increment by gpu virtual addresses of vb and ib
             shader_record.vertices = 0;
             shader_record.indices  = array_len_in_bytes(&indices);
+            shader_record.texture = 0;
         };
         array_push(&g_shader_table, shader_record);
 
@@ -404,10 +413,15 @@ Blas build_blas(
         }
 
         //
+        //upload texture and get GPUAddress
+        //D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), );
+        //desc_heap_handle.DestDescriptor = descriptor_heap->GetCPUDescriptorHandleForHeapStart();
+        ID3D12Resource* tex_resc = create_texture(cmd_list, "data/tex/checkboard.png", desc_heap_handle);
 
         // update shader table
         shader_records[i].vertices += blas.vb->GetGPUVirtualAddress();
         shader_records[i].indices  += blas.ib->GetGPUVirtualAddress();
+        shader_records[i].texture  += tex_resc->GetGPUVirtualAddress();
 
         geometry_descs[i].Triangles.VertexBuffer.StartAddress += blas.vb->GetGPUVirtualAddress();
         geometry_descs[i].Triangles.IndexBuffer               += blas.ib->GetGPUVirtualAddress();
@@ -446,7 +460,6 @@ Blas build_blas(
     // cleanup
     array_free(&vertices);
     array_free(&indices);
-    filepaths.clear();
     array_free(&geometry_descs);
 
     return blas;

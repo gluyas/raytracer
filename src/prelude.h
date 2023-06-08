@@ -33,14 +33,16 @@ using namespace DirectX;
 // third-party libraries
 
 #include "d3dx12.h"
-#include "DDSTextureLoader12.h"
 
 #include "imgui.h"
 #include "imgui_impl_win32.h"
 #include "imgui_impl_dx12.h"
 extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg, WPARAM wParam, LPARAM lParam);
 
+// stb
 #include "stb_image_write.h"
+
+
 
 #endif
 
@@ -135,7 +137,7 @@ struct RaytracingGlobals {
 struct RaytracingLocals {
     COMMON_FLOAT3 color;
     COMMON_INT    translucent_id;
-    UINT64   texture; //D3D12_GPU_VIRTUAL_ADDRESS    figure out how to add SRV here
+    //UINT64   texture; //D3D12_GPU_VIRTUAL_ADDRESS    figure out how to add SRV here
 };
 
 struct TranslucentProperties {

@@ -14,6 +14,7 @@ __declspec(align(32)) struct ShaderRecord {
     RaytracingLocals            locals;
     D3D12_GPU_VIRTUAL_ADDRESS   vertices;
     D3D12_GPU_VIRTUAL_ADDRESS   indices;
+    D3D12_GPU_VIRTUAL_ADDRESS   texture;
 };
 
 enum Shader {
@@ -33,7 +34,7 @@ struct Material {
 struct GeometryInstance {
     ArrayView<Vertex> vertices;
     ArrayView<Index>  indices;
-    wchar_t*          dds_filepath = nullptr;
+    char*             img_filepath = nullptr;
     Material          material;
 };
 
@@ -73,6 +74,7 @@ UINT update_descriptors(DescriptorHandle dest_array);
 Blas build_blas(
     ID3D12GraphicsCommandList4* cmd_list,
     ArrayView<GeometryInstance> geometries,
+    D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle,
     Array<ID3D12Resource*>* temp_resources = NULL
 );
 

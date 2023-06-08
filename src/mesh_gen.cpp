@@ -10,14 +10,14 @@ void mesh_load(
 	) {
 	Array<Vertex> vertices = {};
     Array<Index>  indices  = {};
-    wchar_t* dds_filepath = nullptr;
+    char* img_filepath = nullptr;
 
     for(auto file : obj_files) {
     	parse_obj_file(file.obj_path, true, &vertices, &indices, &aabb);
         //for now assume if mtl exists there's only one obj being loaded
         if (strlen(file.mtl_path) > 1){
-            dds_filepath = (wchar_t*)malloc(256*sizeof(char));
-            parse_mtl_file(file.mtl_path, &mat, dds_filepath);
+            img_filepath = (char*)malloc(256*sizeof(char));
+            parse_mtl_file(file.mtl_path, &mat, img_filepath);
         }
     }
 
@@ -25,7 +25,7 @@ void mesh_load(
  	geometry.material = mat;
  	geometry.vertices = vertices;
     geometry.indices  = indices;
-    geometry.dds_filepath = dds_filepath;
+    geometry.img_filepath = img_filepath;
 
     
     //load texture file if present
