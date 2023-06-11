@@ -7,7 +7,7 @@
 // 1: g
 // 2: g_out
 // 3: {
-//     g_vertices, g_indices, g_partial_surface_areas,
+//     g_vertices, g_indices, l_texture, g_partial_surface_areas,
 //     g_initial_sample_points, g_hashtable
 // }
 // 4: g_sample_points
@@ -17,7 +17,7 @@
     "CBV(b1)," \
     "UAV(u0)," \
     "DescriptorTable(" \
-        "SRV(t0, numDescriptors = 3)," \
+        "SRV(t0, numDescriptors = 4)," \
         "UAV(u1, numDescriptors = 2)" \
     ")," \
     "UAV(u3)," \
@@ -31,8 +31,9 @@ RWStructuredBuffer<ComputeOutput> g_out : register(u0);
 
 StructuredBuffer<Vertex> g_vertices : register(t0);
 ByteAddressBuffer        g_indices  : register(t1);
+Texture2D                l_texture  : register(t2);   //no mipmaps for now
 
-Buffer<float> g_partial_surface_areas : register(t2);
+Buffer<float> g_partial_surface_areas : register(t3);
 
 RWStructuredBuffer<InitialSamplePoint> g_initial_sample_points : register(u1);
 

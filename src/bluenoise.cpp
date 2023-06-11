@@ -100,6 +100,7 @@ UINT generate_sample_points(
     BluenoisePreprocess* preprocess,
     ID3D12Resource* ib, UINT ib_offset,
     ID3D12Resource* vb,
+    ID3D12Resource* tex,
     XMFLOAT4X4* transform,
     float rejection_radius
 ) {
@@ -159,11 +160,12 @@ UINT generate_sample_points(
     D3D12_SHADER_RESOURCE_VIEW_DESC base_srv_desc = {}; {
         base_srv_desc.ViewDimension           = D3D12_SRV_DIMENSION_BUFFER;
         base_srv_desc.Shader4ComponentMapping = D3D12_DEFAULT_SHADER_4_COMPONENT_MAPPING;
-        base_srv_desc.Buffer.FirstElement     = 0;
+        //base_srv_desc.Buffer.FirstElement     = 0;
     }
 
     Descriptor_ vertices; {
         D3D12_SHADER_RESOURCE_VIEW_DESC desc = base_srv_desc;
+        desc.Buffer.FirstElement = 0;
         desc.Format                     = DXGI_FORMAT_UNKNOWN;
         desc.Buffer.NumElements         = vb->GetDesc().Width / sizeof(Vertex);
         desc.Buffer.StructureByteStride = sizeof(Vertex);
@@ -174,12 +176,22 @@ UINT generate_sample_points(
 
     Descriptor_ indices; {
         D3D12_SHADER_RESOURCE_VIEW_DESC desc = base_srv_desc;
+        desc.Buffer.FirstElement = 0;
         desc.Format                     = DXGI_FORMAT_R32_TYPELESS;
         desc.Buffer.NumElements         = ib->GetDesc().Width / 4;
         desc.Buffer.StructureByteStride = 0;
         desc.Buffer.Flags               = D3D12_BUFFER_SRV_FLAG_RAW;
 
         indices = Descriptor_::srv(ib, desc);
+    }
+
+    Descriptor_ texture; {
+        D3D12_SHADER_RESOURCE_VIEW_DESC desc = base_srv_desc;
+        desc.ViewDimension = D3D12_SRV_DIMENSION_TEXTURE2D;
+        desc.Format = DXGI_FORMAT_R8G8B8A8_UNORM;
+        desc.Texture2D.MipLevels = 1;
+
+        texture = Descriptor_::srv(tex, desc);
     }
 
     Descriptor_ partial_surface_areas; {
@@ -225,6 +237,7 @@ UINT generate_sample_points(
     Descriptor_* descriptors[] = {
         &vertices,
         &indices,
+        &texture,
         &partial_surface_areas,
         &initial_sample_points,
         &hashtable

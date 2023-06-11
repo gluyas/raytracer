@@ -269,7 +269,7 @@ int WINAPI wWinMain(
         array_push(&files, MeshFilePaths{ "data/tex/sphere_tex.obj", "data/tex/sphere_tex.mtl" });
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 1.0, 1.0, 1.0 }}, geometries, all_vertices, all_indices);
 
-        D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle;// (g_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), , g_descriptor_size);
+        D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle;// (g_descriptor_heap->GetCPUDescriptorHandleForHeapStart());
         cornell_blas = Raytracing::build_blas(cmd_list, geometries, desc_heap_handle);
 
         for (auto& v : all_vertices) array_free(&v); array_free(&all_vertices);

@@ -51,9 +51,8 @@ LocalRootSignature local_root_signature = {
     "RootConstants(b1, num32BitConstants = 4)," // 0: l
     "SRV(t1),"                                  // 1: l_vertices
     "SRV(t2),"                                  // 2: l_indices
-    "SRV(t10),"                                  // 7: textures, 3,4,5 and 6 are already used for globals
+    "SRV(t7),"                                  // 7: textures, 3,4,5 and 6 are already used for globals
     /*
-    * "SRV(t3),"
     * "StaticSampler(s1, filter=MIN_MAG_MIP_LINEAR, addressU=Wrap, addressV=Wrap),"
     */
 };
@@ -63,7 +62,7 @@ ByteAddressBuffer                l_indices  : register(t2);
 ConstantBuffer<RaytracingLocals> l          : register(b1);
 
 //textures
-Texture2D l_texture : register(t10);   //no mipmaps for now
+Texture2D l_texture : register(t7);   //no mipmaps for now
 /*
 * sampler TexSampler : register(s1);
 */

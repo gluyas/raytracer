@@ -83,6 +83,7 @@ UINT generate_sample_points(
     BluenoisePreprocess* preprocess,
     ID3D12Resource* ib, UINT ib_offset,
     ID3D12Resource* vb,
+    ID3D12Resource* tex,
     XMFLOAT4X4* transform,
     float rejection_radius
 );

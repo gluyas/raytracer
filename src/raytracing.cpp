@@ -50,6 +50,7 @@ struct TranslucentMesh {
     BluenoisePreprocess preprocess;
     ID3D12Resource* ib; UINT ib_offset;
     ID3D12Resource* vb;
+    ID3D12Resource* tex;
 };
 struct TranslucentInstance {
     UINT       translucent_id;
@@ -390,6 +391,9 @@ Blas build_blas(
     // final geometry pass
     ArrayView<ShaderRecord> shader_records = array_slice_from(&g_shader_table, blas.shader_table_index);
     for (UINT i = 0; i < geometries.len; i++) {
+        //load texture here
+        ID3D12Resource* tex_resc = create_texture(cmd_list, "data/tex/checkboard.png", desc_heap_handle);
+
         // prepare translucent geometry
         if (geometries[i].material.shader == Shader::Translucent) {
             blas.translucent_ids_count += 1;
@@ -399,6 +403,7 @@ Blas build_blas(
             TranslucentMesh mesh = {};
             mesh.vb        = blas.vb;
             mesh.ib        = blas.ib;
+            mesh.tex       = tex_resc;
             mesh.ib_offset = shader_records[i].indices / sizeof(Index);
 
             ArrayView<Index> ib = array_slice(&indices, mesh.ib_offset, mesh.ib_offset + geometries[i].indices.len);
@@ -416,7 +421,7 @@ Blas build_blas(
         //upload texture and get GPUAddress
         //D3D12_CPU_DESCRIPTOR_HANDLE desc_heap_handle(descriptor_heap->GetCPUDescriptorHandleForHeapStart(), );
         //desc_heap_handle.DestDescriptor = descriptor_heap->GetCPUDescriptorHandleForHeapStart();
-        ID3D12Resource* tex_resc = create_texture(cmd_list, "data/tex/checkboard.png", desc_heap_handle);
+        
 
         // update shader table
         shader_records[i].vertices += blas.vb->GetGPUVirtualAddress();
@@ -611,6 +616,7 @@ UINT generate_translucent_samples(ID3D12GraphicsCommandList4* cmd_list, float ra
             &mesh->preprocess,
             mesh->ib, mesh->ib_offset,
             mesh->vb,
+            mesh->tex,
             &instance->transform,
             radius
         );
