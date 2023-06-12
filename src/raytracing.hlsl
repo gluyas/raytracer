@@ -48,10 +48,10 @@ Buffer<float3>                          g_point_normals[]             : register
 sampler BssrdfSampler : register(s0);
 
 LocalRootSignature local_root_signature = {
-    "RootConstants(b1, num32BitConstants = 4)," // 0: l
-    "SRV(t1),"                                  // 1: l_vertices
-    "SRV(t2),"                                  // 2: l_indices
-    "SRV(t7),"                                  // 7: textures, 3,4,5 and 6 are already used for globals
+    "RootConstants(b1, num32BitConstants = 4)," // 0:         l
+    "SRV(t1),"                                  // 1:         l_vertices
+    "SRV(t2),"                                  // 2:         l_indices
+    "SRV(t0, space=2),"                         // 0, space2: l_texture, 3,4,5 and 6 are already used for globals
     /*
     * "StaticSampler(s1, filter=MIN_MAG_MIP_LINEAR, addressU=Wrap, addressV=Wrap),"
     */
@@ -60,9 +60,8 @@ LocalRootSignature local_root_signature = {
 StructuredBuffer<Vertex>         l_vertices : register(t1);
 ByteAddressBuffer                l_indices  : register(t2);
 ConstantBuffer<RaytracingLocals> l          : register(b1);
-
 //textures
-Texture2D l_texture : register(t7);   //no mipmaps for now
+Texture2D l_texture : register(t0, space2);   //no mipmaps for now
 /*
 * sampler TexSampler : register(s1);
 */
@@ -220,14 +219,14 @@ void lambert_chit(inout RayPayload payload, Attributes attr) {
     float dot_nl = dot(normal, outgoing);
 
     //based on [Walter2007]
-    float roughness = 0.5f;
+    float roughness = g.mat_roughness;
     float3 m_normal = normalize(incoming + outgoing);   //half vector
 
     float incident_index = 1.0f;
     float transmitted_index = g.translucent_refractive_index;
 
     float fresnel = F(outgoing, normal, incident_index, transmitted_index);
-    float spec = 
+    float spec =
         GGX(m_normal, normal, roughness) *
         G1(incoming, m_normal, normal, roughness) * G1(outgoing, m_normal, normal, roughness) *
         F(outgoing, m_normal, incident_index, transmitted_index);
@@ -397,7 +396,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
 
     float  n = g.translucent_refractive_index;
     float3 scatter = random_on_hemisphere(payload.rng, normal);
-    float  lambert = dot(scatter, normal);
+    float  lambert = cook_torrance(scatter, normal, WorldRayDirection());
 
     float  incident_cosine     = lambert; // = dot(scatter, normal);
     float  incident_fresnel    = schlick(n, incident_cosine);                          // boundary n1=1, n2>1; reflected component

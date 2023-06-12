@@ -119,6 +119,9 @@ struct RaytracingGlobals {
     COMMON_FLOAT    camera_aspect;
     COMMON_FLOAT    camera_focal_length;
 
+    // material
+    COMMON_FLOAT    mat_roughness;
+
     // translucent
     COMMON_UINT     translucent_accumulator_count;
     COMMON_UINT     translucent_instance_stride;

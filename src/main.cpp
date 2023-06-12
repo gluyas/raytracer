@@ -249,7 +249,7 @@ int WINAPI wWinMain(
         Array<MeshFilePaths> files = {};
         array_push(&files, MeshFilePaths{ "data/cornell/luminaire.obj", ""});
         mesh_load(files, cornell_aabb, Material{Shader::Light, { 50.0, 50.0, 50.0 }}, geometries, all_vertices, all_indices);
-        
+
         files = {};
         array_push(&files, MeshFilePaths{ "data/cornell/floor.obj", "" });
         array_push(&files, MeshFilePaths{ "data/cornell/back.obj", "" });
@@ -263,7 +263,7 @@ int WINAPI wWinMain(
         files = {};
         array_push(&files, MeshFilePaths{ "data/cornell/greenwall.obj", "" });
         mesh_load(files, cornell_aabb, Material{Shader::Lambert, { 0.0, 1.0, 0.0 }}, geometries, all_vertices, all_indices);
-        
+
         files = {};
         //for now assume if mtl exists there's only one obj being loaded
         array_push(&files, MeshFilePaths{ "data/tex/sphere_tex.obj", "data/tex/sphere_tex.mtl" });
@@ -412,6 +412,13 @@ int WINAPI wWinMain(
             Raytracing::g_globals.camera_focal_length = 1 / tanf(fov_y/2);
             XMMATRIX view = XMMatrixLookAtRH(camera_pos, focus, g_XMIdentityR2);
             XMStoreFloat4x4(&Raytracing::g_globals.camera_to_world, XMMatrixInverse(NULL, view));
+        }
+
+        { // microfacet material
+            ImGui::Separator();
+            ImGui::Text("material"); ImGui::SameLine();
+
+            g_do_reset_accumulator |= ImGui::SliderFloat("roughness##material", &Raytracing::g_globals.mat_roughness, 0.0, 1.0, "%.3f");
         }
 
         { // translucent material
