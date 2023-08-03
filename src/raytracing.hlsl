@@ -88,8 +88,8 @@ RaytracingPipelineConfig pipeline_config = {
 };
 
 // SHADER CODE
-
-float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
+#define IGNORE_TRANSLUCENT_EMISSION true
+float4 trace_path_sample(inout uint rng, inout RayDesc ray, bool ignore_translucent_emission = false) {
     float4 result = 0;
 
     RayPayload payload;
@@ -104,6 +104,11 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
             0, 1, 0,
             ray, payload
         );
+        if (ignore_translucent_emission) {
+            // HACK: currently only translucent materials can return positive reflectance and emission
+            // ignore translucent emission by checking if both are positive
+            if (any(payload.emission) & any(payload.reflectance)) payload.emission = 0;
+        }
         radiance    += payload.emission * reflectance;
         reflectance *= payload.reflectance;
 
@@ -244,7 +249,7 @@ void translucent_rgen() {
         ray.Origin    = sample_point.position;
         ray.Direction = random_on_hemisphere(rng, normal); // TODO: cosine weighted samples
 
-        float3 radiance = trace_path_sample(rng, ray).rgb;
+        float3 radiance = trace_path_sample(rng, ray, IGNORE_TRANSLUCENT_EMISSION).rgb; // ignore translucent emission to prevent positive feedback
         float  cosine   = -dot(ray.Direction, normal);
         float  fresnel  = 1 - schlick(g.translucent_refractive_index, cosine);
 

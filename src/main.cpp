@@ -156,8 +156,10 @@ int WINAPI wWinMain(
         wc.lpszClassName = L"RaytracerWindowClass";
 
         RECT rect = {};
-        rect.right  = 1600;
-        rect.bottom = 900;
+        // rect.right  = 1600;
+        // rect.bottom = 900;
+        rect.right  = 1000;
+        rect.bottom = 955;
         AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
 
         RegisterClass(&wc);
@@ -410,7 +412,8 @@ int WINAPI wWinMain(
     Raytracing::g_globals.samples_per_pixel  = 1;
     Raytracing::g_globals.bounces_per_sample = 4;
 
-    Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
+    // Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
+    Raytracing::g_globals.translucent_bssrdf_scale = 0.0;
     Raytracing::g_globals.translucent_bssrdf_fudge = 1.0;
     Raytracing::g_globals.translucent_refractive_index = 1.5;
     Raytracing::g_globals.translucent_scattering = 15.0;
@@ -418,6 +421,7 @@ int WINAPI wWinMain(
 
     // MAIN LOOP
 
+    static UINT64 frame_id = 0;
     while (true) {
         // SETUP
 
@@ -478,7 +482,7 @@ int WINAPI wWinMain(
         // UPDATE
 
         { // camera
-            ImGui::Text("camera");
+            ImGui::Text("camera"); ImGui::SameLine();
 
             static float azimuth   = 0;
             static float elevation = 0;
@@ -486,6 +490,18 @@ int WINAPI wWinMain(
             static float target[3] = {};
             static float fov_x     = 70*DEGREES;
             static float fov_y     = fov_x / g_aspect;
+
+            if (ImGui::Button("reset##camera") || frame_id == 0) {
+                azimuth = 0;
+                elevation = 9*DEGREES;
+                distance = 2.5;
+                target[0] = 0;
+                target[1] = 0;
+                target[2] = -0.07;
+                fov_y = 30*DEGREES;
+                fov_x = fov_y * g_aspect;
+                g_do_reset_accumulator = true;
+            }
 
             g_do_reset_accumulator |= ImGui::SliderAngle("azimuth##camera",   &azimuth);
             azimuth += mouse_drag.x * TAU/2;
@@ -560,20 +576,20 @@ int WINAPI wWinMain(
             ImGui::Separator();
             ImGui::Text("renderer");
 
-            int set_resolution[2] = { (int) g_width, (int) g_height };
-            if (ImGui::InputInt2("resolution", set_resolution, ImGuiInputTextFlags_EnterReturnsTrue)) {
-                g_do_reset_accumulator = true;
+            // int set_resolution[2] = { (int) g_width, (int) g_height };
+            // if (ImGui::InputInt2("resolution", set_resolution, ImGuiInputTextFlags_EnterReturnsTrue)) {
+            //     g_do_reset_accumulator = true;
 
-                set_resolution[0] = max(set_resolution[0], 256);
-                set_resolution[1] = max(set_resolution[1], 256);
+            //     set_resolution[0] = max(set_resolution[0], 256);
+            //     set_resolution[1] = max(set_resolution[1], 256);
 
-                RECT rect;
-                GetWindowRect(g_hwnd, &rect);
-                rect.right  = rect.left + set_resolution[0];
-                rect.bottom = rect.top  + set_resolution[1];
-                AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
-                MoveWindow(g_hwnd, rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top, true);
-            }
+            //     RECT rect;
+            //     GetWindowRect(g_hwnd, &rect);
+            //     rect.right  = rect.left + set_resolution[0];
+            //     rect.bottom = rect.top  + set_resolution[1];
+            //     AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
+            //     MoveWindow(g_hwnd, rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top, true);
+            // }
 
             g_do_reset_accumulator |= ImGui::SliderInt("samples##render", (int*) &Raytracing::g_globals.samples_per_pixel,  1, 64, "%d", ImGuiSliderFlags_AlwaysClamp);
             g_do_reset_accumulator |= ImGui::SliderInt("bounces##render", (int*) &Raytracing::g_globals.bounces_per_sample, 0, 16, "%d", ImGuiSliderFlags_AlwaysClamp);
@@ -611,7 +627,7 @@ int WINAPI wWinMain(
 
         // RENDER
 
-        UINT frame_index = g_swapchain->GetCurrentBackBufferIndex();
+        UINT backbuffer_index = g_swapchain->GetCurrentBackBufferIndex();
 
         CHECK_RESULT(g_cmd_allocator->Reset());
         CHECK_RESULT(cmd_list->Reset(g_cmd_allocator, NULL));
@@ -622,9 +638,9 @@ int WINAPI wWinMain(
 
         // copy raytracing output to backbuffer
         cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(Raytracing::g_render_target, D3D12_RESOURCE_STATE_UNORDERED_ACCESS, D3D12_RESOURCE_STATE_COPY_SOURCE));
-        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[frame_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST));
+        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[backbuffer_index], D3D12_RESOURCE_STATE_PRESENT, D3D12_RESOURCE_STATE_COPY_DEST));
 
-        cmd_list->CopyResource(g_rtvs[frame_index], Raytracing::g_render_target);
+        cmd_list->CopyResource(g_rtvs[backbuffer_index], Raytracing::g_render_target);
 
         { // image capture
             ImGui::Separator();
@@ -718,20 +734,22 @@ int WINAPI wWinMain(
 
         // render imgui
         ImGui::End();
-        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[frame_index], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET));
-        auto rtv_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(g_rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), frame_index, g_rtv_descriptor_size);
+        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[backbuffer_index], D3D12_RESOURCE_STATE_COPY_DEST, D3D12_RESOURCE_STATE_RENDER_TARGET));
+        auto rtv_descriptor = CD3DX12_CPU_DESCRIPTOR_HANDLE(g_rtv_descriptor_heap->GetCPUDescriptorHandleForHeapStart(), backbuffer_index, g_rtv_descriptor_size);
         cmd_list->OMSetRenderTargets(1, &rtv_descriptor, FALSE, NULL);
 
         ImGui::Render();
         ImGui_ImplDX12_RenderDrawData(ImGui::GetDrawData(), cmd_list);
 
         // present backbuffer
-        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[frame_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
+        cmd_list->ResourceBarrier(1, &CD3DX12_RESOURCE_BARRIER::Transition(g_rtvs[backbuffer_index], D3D12_RESOURCE_STATE_RENDER_TARGET, D3D12_RESOURCE_STATE_PRESENT));
         CHECK_RESULT(cmd_list->Close());
 
         // execute
         g_cmd_queue->ExecuteCommandLists(1, (ID3D12CommandList**) &cmd_list);
 
         CHECK_RESULT(g_swapchain->Present(VSYNC, 0));
+
+        frame_id += 1;
     }
 }
