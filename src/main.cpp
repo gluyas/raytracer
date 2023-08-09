@@ -416,8 +416,8 @@ int WINAPI wWinMain(
     Raytracing::g_globals.translucent_bssrdf_scale = 0.0;
     Raytracing::g_globals.translucent_bssrdf_fudge = 1.0;
     Raytracing::g_globals.translucent_refractive_index = 1.5;
-    Raytracing::g_globals.translucent_scattering = 15.0;
-    Raytracing::g_globals.translucent_absorption = 0.1;
+    Raytracing::g_globals.translucent_scattering = XMFLOAT3(15.0, 15.0, 15.0);
+    Raytracing::g_globals.translucent_absorption = XMFLOAT3(0.1, 0.1, 0.1);
 
     // MAIN LOOP
 
@@ -552,8 +552,18 @@ int WINAPI wWinMain(
                 scale = Raytracing::g_globals.translucent_bssrdf_scale;
             } else {
                 // dipole
-                g_do_reset_accumulator |= ImGui::SliderFloat("scattering##translucent", &Raytracing::g_globals.translucent_scattering, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
-                g_do_reset_accumulator |= ImGui::SliderFloat("absorption##translucent", &Raytracing::g_globals.translucent_absorption, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
+                static float scattering_hue[3] = {1.0, 1.0, 1.0};
+                static float scattering = 15.0;
+                static float absorption_hue[3] = {1.0, 1.0, 1.0};
+                static float absorption = 0.1;
+
+                g_do_reset_accumulator |= ImGui::SliderFloat("scattering##translucent", &scattering, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
+                g_do_reset_accumulator |= ImGui::ColorEdit3("scattering rgb##translucent", scattering_hue, ImGuiColorEditFlags_Float);
+                g_do_reset_accumulator |= ImGui::SliderFloat("absorption##translucent", &absorption, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
+                g_do_reset_accumulator |= ImGui::ColorEdit3("absorption rgb##translucent", absorption_hue, ImGuiColorEditFlags_Float);
+
+                Raytracing::g_globals.translucent_scattering = { scattering_hue[0] * scattering, scattering_hue[1] * scattering, scattering_hue[2] * scattering };
+                Raytracing::g_globals.translucent_absorption = { absorption_hue[0] * absorption, absorption_hue[1] * absorption, absorption_hue[2] * absorption };
             }
         }
 
@@ -646,7 +656,7 @@ int WINAPI wWinMain(
             ImGui::Separator();
             ImGui::Text("image capture");
             static bool do_capture = false;
-            static UINT capture_samples = 1024 * Raytracing::g_globals.samples_per_pixel;
+            static UINT capture_samples = 2048 * Raytracing::g_globals.samples_per_pixel;
             static ID3D12Resource* capture_readback_buffer = NULL;
             static UINT            capture_readback_buffer_pitch;
 

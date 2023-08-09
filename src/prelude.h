@@ -100,6 +100,10 @@ struct SamplePoint {
     COMMON_FLOAT3 payload; // incident flux
 };
 
+// TODO: mimic HLSL packing semantics
+// currently must manually implement HLSL's struct packing rules
+// see: https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-packing-rules
+// check shader bytecode (../out/raytracing_hlsl.h) to see generated member offsets
 struct RaytracingGlobals {
     COMMON_UINT     frame_rng;
     COMMON_UINT     accumulator_count;
@@ -116,13 +120,13 @@ struct RaytracingGlobals {
 
     COMMON_FLOAT    translucent_refractive_index;
 
+    // dipole model
+    COMMON_FLOAT3   translucent_scattering;
+    COMMON_FLOAT3   translucent_absorption;
+
     // tabulated
     COMMON_FLOAT    translucent_bssrdf_scale;
     COMMON_FLOAT    translucent_bssrdf_fudge;
-
-    // dipole model
-    COMMON_FLOAT    translucent_scattering;
-    COMMON_FLOAT    translucent_absorption;
 };
 
 struct RaytracingLocals {

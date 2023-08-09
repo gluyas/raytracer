@@ -271,27 +271,27 @@ inline float3 eval_bssrdf_tabulated(TranslucentProperties translucent, float rad
 }
 
 inline float3 eval_bssrdf_dipole(TranslucentProperties translucent, float radius) {
-    float attenuation           = g.translucent_scattering + g.translucent_absorption;
-    float mean_free_path        = 1 / attenuation;
-    float albedo                = g.translucent_scattering / attenuation;
-    float effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
+    float3 attenuation           = g.translucent_scattering + g.translucent_absorption;
+    float3 mean_free_path        = 1 / attenuation;
+    float3 albedo                = g.translucent_scattering / attenuation;
+    float3 effective_attenuation = sqrt(3 * g.translucent_scattering * g.translucent_absorption);
 
     float eta              = g.translucent_refractive_index;
     float diffuse_fresnel = -1.440/(eta*eta) + 0.710/eta + 0.668 + 0.0636*eta;
 
     // subsurface diffuse light source
-    float z_real    = mean_free_path;
-    float d_real    = radius + z_real;
-    float c_real    = z_real * (effective_attenuation + 1/d_real);
+    float3 z_real    = mean_free_path;
+    float3 d_real    = radius + z_real;
+    float3 c_real    = z_real * (effective_attenuation + 1/d_real);
 
     // virtual light source above surface
-    float z_virtual = mean_free_path * (1 + 1.25*(1 + diffuse_fresnel)/(1 - diffuse_fresnel));
-    float d_virtual = radius + z_virtual;
-    float c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
+    float3 z_virtual = mean_free_path * (1 + 1.25*(1 + diffuse_fresnel)/(1 - diffuse_fresnel));
+    float3 d_virtual = radius + z_virtual;
+    float3 c_virtual = z_virtual * (effective_attenuation + 1/d_virtual);
 
     // combine real and virtual contributions
-    float m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
-    float m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
+    float3 m_real    = c_real    * exp(-effective_attenuation * d_real)    / (d_real*d_real);
+    float3 m_virtual = c_virtual * exp(-effective_attenuation * d_virtual) / (d_virtual*d_virtual);
     return max(0, albedo/(2*TAU) * (m_real + m_virtual));
 }
 
