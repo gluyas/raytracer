@@ -352,7 +352,7 @@ int WINAPI wWinMain(
         XMMATRIX transform = XMMatrixAffineTransformation(
             XMVectorReplicate(scale),
             g_XMZero, g_XMIdentityR3,
-            (0.5*(cornell_aabb.min - cornell_aabb.max) - cornell_aabb.min) * scale
+            (0.5*(cornell_aabb.max - cornell_aabb.min) - cornell_aabb.max) * scale
         );
         XMStoreFloat4x4(&instance.transform, transform);
 
@@ -415,7 +415,7 @@ int WINAPI wWinMain(
     // Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
     Raytracing::g_globals.translucent_bssrdf_scale = 0.0;
     Raytracing::g_globals.translucent_bssrdf_fudge = 1.0;
-    Raytracing::g_globals.translucent_refractive_index = 1.5;
+    Raytracing::g_globals.translucent_refractive_index = 3.0;
     Raytracing::g_globals.translucent_scattering = XMFLOAT3(15.0, 15.0, 15.0);
     Raytracing::g_globals.translucent_absorption = XMFLOAT3(0.1, 0.1, 0.1);
 
@@ -497,7 +497,7 @@ int WINAPI wWinMain(
                 distance = 2.5;
                 target[0] = 0;
                 target[1] = 0;
-                target[2] = -0.07;
+                target[2] = -0.06;
                 fov_y = 30*DEGREES;
                 fov_x = fov_y * g_aspect;
                 g_do_reset_accumulator = true;

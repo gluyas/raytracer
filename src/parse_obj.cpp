@@ -54,9 +54,6 @@ void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* ve
                 XMFLOAT3 v;
 
                 assert(parse_floats(&substr, 3, (float*) &v) == 3);
-                if (aabb) {
-                    *aabb = aabb_join(*aabb, XMLoadFloat3(&v));
-                }
                 array_push(&vs, v);
             } else if (substr[1] == 't' && isspace(substr[2])) {
                 substr += 2;
@@ -160,20 +157,20 @@ void parse_obj_file(const char* filename, bool convert_to_rhs, Array<Vertex>* ve
                 }
                 if (convert_to_rhs) {
                     swap(&vertex.position.y, &vertex.position.z);
-                    vertex.position.x = -vertex.position.x + XMVectorGetX(aabb->max + aabb->min);
+                    vertex.position.x = -vertex.position.x;
 
                     swap(&vertex.normal.y, &vertex.normal.z);
                     vertex.normal.x = -vertex.normal.x;
                 }
                 // if (vt_indices_count); // TODO: handle uv coordinates
                 array_push(vertices, vertex);
+                if (aabb) {
+                    *aabb = aabb_join(*aabb, XMLoadFloat3(&vertex.position));
+                }
             }
         }
     }
-    if (convert_to_rhs) {
-        aabb->min = XMVectorSwizzle<0, 2, 1, 3>(aabb->min);
-        aabb->max = XMVectorSwizzle<0, 2, 1, 3>(aabb->max);
-    }
+
     free(char_buf);
     fclose(file);
 }
