@@ -10,7 +10,7 @@ using Device::g_rtv_descriptor_size;
 #include "raytracing.h"
 #include "bluenoise.h"
 
-#define SCENE_NAME "sample_points_test"
+#define SCENE_NAME "final"
 
 #define WINDOW_STYLE_EX WS_EX_OVERLAPPEDWINDOW
 #define WINDOW_STYLE (WS_OVERLAPPEDWINDOW | WS_VISIBLE)
@@ -48,6 +48,7 @@ bool g_do_update_resolution = true;
 bool g_do_reset_accumulator = true;
 bool g_do_reset_translucent_accumulator = true;
 float g_do_regenerate_translucent_samples = 0.025;
+float g_sample_points_radius = 0;
 UINT g_total_sample_points = 0;
 UINT g_prevent_resizing = 0;
 
@@ -416,7 +417,7 @@ int WINAPI wWinMain(
     // Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
     Raytracing::g_globals.translucent_bssrdf_scale = 0.0;
     Raytracing::g_globals.translucent_bssrdf_fudge = 1.0;
-    Raytracing::g_globals.translucent_refractive_index = 3.0;
+    Raytracing::g_globals.translucent_refractive_index = 1.75;
     Raytracing::g_globals.translucent_scattering = XMFLOAT3(15.0, 15.0, 15.0);
     Raytracing::g_globals.translucent_absorption = XMFLOAT3(0.1, 0.1, 0.1);
 
@@ -627,6 +628,7 @@ int WINAPI wWinMain(
             Fence::increment_and_signal_and_wait(g_cmd_queue, &g_fence);
             Device::release_temp_resources();
 
+            g_sample_points_radius = g_do_regenerate_translucent_samples;
             g_do_regenerate_translucent_samples = 0;
             g_do_reset_translucent_accumulator = true;
         }
@@ -723,7 +725,12 @@ int WINAPI wWinMain(
                 const time_t now = time(NULL);
                 strftime(timestamp, 32, "%Y_%m_%d_%H_%M_%S", gmtime(&now));
                 char filename[128] = {};
-                sprintf(filename, "captures/%s_%s.%dx%d.s%d.b%d.png", SCENE_NAME, timestamp, g_width, g_height, capture_samples, Raytracing::g_globals.bounces_per_sample);
+                sprintf(filename, "captures/%s_%s-lambda%.4f-mus(%.3e,%.3e,%.3e)-mua(%.3e,%.3e,%.3e)-r%.3e-#%d-%dx%d.png", SCENE_NAME, timestamp,
+                    Raytracing::g_globals.translucent_refractive_index,
+                    Raytracing::g_globals.translucent_scattering.x, Raytracing::g_globals.translucent_scattering.y, Raytracing::g_globals.translucent_scattering.z,
+                    Raytracing::g_globals.translucent_absorption.x, Raytracing::g_globals.translucent_absorption.y, Raytracing::g_globals.translucent_absorption.z,
+                    g_sample_points_radius, capture_samples, g_width, g_height
+                );
                 stbi_write_png(filename, g_width, g_height, 4, data_ptr, capture_readback_buffer_pitch);
 
                 capture_readback_buffer->Unmap(0, &CD3DX12_RANGE(0, 0));
