@@ -99,16 +99,17 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray, bool ignore_transluc
     float3 reflectance = 1;
     uint bounce_index;
     for (bounce_index = 0; bounce_index <= g.bounces_per_sample; bounce_index++) {
+        payload.t = bounce_index;
+        if (ignore_translucent_emission) {
+            // HACK: currently only translucent materials use payload.t to check bounce index within hit shader
+            // ignore translucent emission by setting to infinity
+            payload.t = INFINITY;
+        }
         TraceRay(
             g_scene, RAY_FLAG_NONE, 0xff,
             0, 1, 0,
             ray, payload
         );
-        if (ignore_translucent_emission) {
-            // HACK: currently only translucent materials can return positive reflectance and emission
-            // ignore translucent emission by checking if both are positive
-            if (any(payload.emission) & any(payload.reflectance)) payload.emission = 0;
-        }
         radiance    += payload.emission * reflectance;
         reflectance *= payload.reflectance;
 
@@ -314,7 +315,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
     float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 
     float3 diffuse_irradiance = 0;
-    if (g.translucent_accumulator_count && g.translucent_bssrdf_fudge) {
+    if (payload.t <= g.translucent_emission_bounces && g.translucent_accumulator_count && g.translucent_bssrdf_fudge) {
         for (int i = 0; i < samples_count; i++) {
             SamplePoint sample_point = samples[i];
             float radius = length(sample_point.position - hit_point);

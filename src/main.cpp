@@ -411,6 +411,7 @@ int WINAPI wWinMain(
 
     Raytracing::g_globals.samples_per_pixel  = 1;
     Raytracing::g_globals.bounces_per_sample = 4;
+    Raytracing::g_globals.translucent_emission_bounces = 1;
 
     // Raytracing::g_globals.translucent_bssrdf_scale = 0.4;
     Raytracing::g_globals.translucent_bssrdf_scale = 0.0;
@@ -538,7 +539,10 @@ int WINAPI wWinMain(
             ImGui::Text("translucent material"); ImGui::SameLine();
             g_do_reset_accumulator |= ImGui::Checkbox("enabled##translucent", &Raytracing::g_enable_subsurface_scattering);
 
-            static float scale = Raytracing::g_globals.translucent_bssrdf_scale;
+            g_do_reset_accumulator |= ImGui::SliderInt("emission bounces##render", (int*) &Raytracing::g_globals.translucent_emission_bounces, 0, Raytracing::g_globals.bounces_per_sample, "%d", ImGuiSliderFlags_AlwaysClamp);
+
+            // static float scale = Raytracing::g_globals.translucent_bssrdf_scale;
+            static float scale = 0.4;
             if (ImGui::RadioButton("tabulated", Raytracing::g_globals.translucent_bssrdf_scale != 0)) { Raytracing::g_globals.translucent_bssrdf_scale = scale; g_do_reset_accumulator = true; }; ImGui::SameLine();
             if (ImGui::RadioButton("dipole",    Raytracing::g_globals.translucent_bssrdf_scale == 0)) { Raytracing::g_globals.translucent_bssrdf_scale = 0;     g_do_reset_accumulator = true; };
 

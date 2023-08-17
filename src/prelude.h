@@ -47,7 +47,7 @@ extern IMGUI_IMPL_API LRESULT ImGui_ImplWin32_WndProcHandler(HWND hWnd, UINT msg
 
 #ifdef CPP
 
-#define PIXEL_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
+#define COMMON_DECL     __pragma(pack(4))
 
 #define COMMON_FLOAT    float
 #define COMMON_FLOAT2   XMFLOAT2
@@ -67,11 +67,12 @@ typedef UINT16 Index;
 #define INDEX_MAX    USHRT_MAX
 #define INDEX_FORMAT DXGI_FORMAT_R16_UINT
 
+#define PIXEL_FORMAT DXGI_FORMAT_R8G8B8A8_UNORM
+
 #endif
 #ifdef HLSL
 
-#define INFINITY (1.0 / 0.0)
-
+#define COMMON_DECL
 #define COMMON_FLOAT    float
 #define COMMON_FLOAT2   float2
 #define COMMON_FLOAT3   float3
@@ -86,16 +87,18 @@ typedef UINT16 Index;
 #define COMMON_UINT3    uint3
 #define COMMON_UINT4    uint4
 
+#define INFINITY (1.0 / 0.0)
+
 #endif
 
 // shared typedefs
 
-struct Vertex {
+COMMON_DECL struct Vertex {
     COMMON_FLOAT3 position;
     COMMON_FLOAT3 normal;
 };
 
-struct SamplePoint {
+COMMON_DECL struct SamplePoint {
     COMMON_FLOAT3 position;
     COMMON_FLOAT3 payload; // incident flux
 };
@@ -104,7 +107,7 @@ struct SamplePoint {
 // currently must manually implement HLSL's struct packing rules
 // see: https://learn.microsoft.com/en-us/windows/win32/direct3dhlsl/dx-graphics-hlsl-packing-rules
 // check shader bytecode (../out/raytracing_hlsl.h) to see generated member offsets
-struct RaytracingGlobals {
+COMMON_DECL struct RaytracingGlobals {
     COMMON_UINT     frame_rng;
     COMMON_UINT     accumulator_count;
     COMMON_UINT     samples_per_pixel;
@@ -118,23 +121,26 @@ struct RaytracingGlobals {
     COMMON_UINT     translucent_accumulator_count;
     COMMON_UINT     translucent_instance_stride;
 
-    COMMON_FLOAT    translucent_refractive_index;
+    COMMON_INT      translucent_emission_bounces;
 
-    // dipole model
-    COMMON_FLOAT3   translucent_scattering;
-    COMMON_FLOAT3   translucent_absorption;
+    COMMON_FLOAT    translucent_refractive_index;
 
     // tabulated
     COMMON_FLOAT    translucent_bssrdf_scale;
     COMMON_FLOAT    translucent_bssrdf_fudge;
+
+    // dipole model
+    COMMON_FLOAT3   translucent_scattering;
+    COMMON_FLOAT    _pad124;
+    COMMON_FLOAT3   translucent_absorption;
 };
 
-struct RaytracingLocals {
+COMMON_DECL struct RaytracingLocals {
     COMMON_FLOAT3 color;
     COMMON_INT    translucent_id;
 };
 
-struct TranslucentProperties {
+COMMON_DECL struct TranslucentProperties {
     COMMON_FLOAT samples_mean_area;
 };
 
