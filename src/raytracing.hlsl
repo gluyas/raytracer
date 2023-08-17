@@ -106,7 +106,7 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray, bool ignore_transluc
             payload.t = INFINITY;
         }
         TraceRay(
-            g_scene, RAY_FLAG_NONE, 0xff,
+            g_scene, RAY_FLAG_CULL_BACK_FACING_TRIANGLES, 0xff,
             0, 1, 0,
             ray, payload
         );
@@ -188,9 +188,13 @@ void light_chit(inout RayPayload payload, Attributes attr) {
     uint3  indices = load_3x16bit_indices(l_indices, PrimitiveIndex());
     float3 normal  = get_world_space_normal(indices, attr.barycentrics);
 
+    float3 color;
+    if (any(l.color)) color = l.color;
+    else              color = g.light_color;
+
     payload.scatter     = 0;
     payload.reflectance = 0;
-    payload.emission    = l.color * -dot(normal, WorldRayDirection());
+    payload.emission    = color * -dot(normal, WorldRayDirection());
     payload.t           = RayTCurrent();
 }
 

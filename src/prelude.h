@@ -131,8 +131,11 @@ COMMON_DECL struct RaytracingGlobals {
 
     // dipole model
     COMMON_FLOAT3   translucent_scattering;
-    COMMON_FLOAT    _pad124;
+    COMMON_UINT     _pad124;
     COMMON_FLOAT3   translucent_absorption;
+    COMMON_UINT     _pad140;
+
+    COMMON_FLOAT3   light_color;
 };
 
 COMMON_DECL struct RaytracingLocals {

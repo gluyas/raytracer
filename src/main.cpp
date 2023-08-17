@@ -299,7 +299,7 @@ int WINAPI wWinMain(
 
             parse_obj_file("data/cornell/luminaire.obj", true, &vertices, &indices, &cornell_aabb);
             GeometryInstance geometry = {};
-            geometry.material.color  = { 50.0, 50.0, 50.0 };
+            geometry.material.color  = { 0.0, 0.0, 0.0 };
             geometry.material.shader = Shader::Light;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -535,6 +535,18 @@ int WINAPI wWinMain(
             XMStoreFloat4x4(&Raytracing::g_globals.camera_to_world, XMMatrixInverse(NULL, view));
         }
 
+        { // light source
+            ImGui::Separator();
+            ImGui::Text("light source");
+
+            static float light_hue[3] = { 1.0, 1.0, 1.0 };
+            static float light_brightness = 50.0;
+            g_do_reset_translucent_accumulator |= ImGui::DragFloat("brightness##light", &light_brightness, 0.5, 0.0, 1000.0, "%.3f", ImGuiSliderFlags_Logarithmic);
+            g_do_reset_translucent_accumulator |= ImGui::ColorEdit3("rgb##light", light_hue);
+
+            Raytracing::g_globals.light_color = { light_hue[0] * light_brightness, light_hue[1] * light_brightness, light_hue[2] * light_brightness };
+        }
+
         { // translucent material
             ImGui::Separator();
             ImGui::Text("translucent material"); ImGui::SameLine();
@@ -634,12 +646,16 @@ int WINAPI wWinMain(
         }
 
         // frame accumulator
-        if (g_do_reset_translucent_accumulator) Raytracing::g_globals.translucent_accumulator_count = 0;
-        g_do_reset_accumulator |= g_do_reset_translucent_accumulator;
-        g_do_reset_translucent_accumulator = false;
+        if (g_do_reset_translucent_accumulator) {
+            g_do_reset_accumulator = true;
+            Raytracing::g_globals.translucent_accumulator_count = 0;
+            g_do_reset_translucent_accumulator = false;
+        }
 
-        if (g_do_reset_accumulator) Raytracing::g_globals.accumulator_count  = 0;
-        g_do_reset_accumulator = false;
+        if (g_do_reset_accumulator) {
+            Raytracing::g_globals.accumulator_count  = 0;
+            g_do_reset_accumulator = false;
+        }
 
         // RENDER
 
