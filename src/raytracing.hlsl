@@ -130,7 +130,7 @@ void camera_rgen() {
     uint rng = hash(uint3(DispatchRaysIndex().xy, g.frame_rng*(g.accumulator_count != 0)));
 
     RayDesc ray;
-    ray.TMin = 0.0001;
+    ray.TMin = 0.000001;
     ray.TMax = 10000;
 
     // accumulate new samples for this frame
@@ -319,7 +319,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
     float3 hit_point = WorldRayOrigin() + RayTCurrent() * WorldRayDirection();
 
     float3 diffuse_irradiance = 0;
-    if (payload.t <= g.translucent_emission_bounces && g.translucent_accumulator_count && g.translucent_bssrdf_fudge) {
+    if (payload.t <= g.translucent_emission_bounces && g.translucent_bssrdf_fudge) {
         for (int i = 0; i < samples_count; i++) {
             SamplePoint sample_point = samples[i];
             float radius = length(sample_point.position - hit_point);
@@ -329,7 +329,7 @@ void translucent_chit(inout RayPayload payload, Attributes attr) {
 
             diffuse_irradiance += bssrdf * sample_point.payload;
         }
-        diffuse_irradiance /= g.translucent_accumulator_count;
+        diffuse_irradiance /= (g.translucent_accumulator_count + 1);
     }
 
     float  n = g.translucent_refractive_index;

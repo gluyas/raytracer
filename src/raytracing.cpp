@@ -652,6 +652,7 @@ UINT generate_translucent_samples(ID3D12GraphicsCommandList4* cmd_list, float ra
 void dispatch_rays(ID3D12GraphicsCommandList4* cmd_list) {
     float translucent_bssrdf_fudge = g_globals.translucent_bssrdf_fudge;
     if (!g_enable_subsurface_scattering) {
+        // HACK: this variable is set to zero to disable translucent bssrdf: set value to zero and resore at end of scope
         g_globals.translucent_bssrdf_fudge = 0;
     }
 
@@ -683,9 +684,7 @@ void dispatch_rays(ID3D12GraphicsCommandList4* cmd_list) {
         dispatch_rays.Depth  = 1;
 
         cmd_list->DispatchRays(&dispatch_rays);
-    }
-
-    // dispatch render
+    }    // dispatch render
     dispatch_rays.RayGenerationShaderRecord.StartAddress = g_camera_rgen_shader_record->GetGPUVirtualAddress();
     dispatch_rays.RayGenerationShaderRecord.SizeInBytes  = g_camera_rgen_shader_record->GetDesc().Width;
 
@@ -695,12 +694,14 @@ void dispatch_rays(ID3D12GraphicsCommandList4* cmd_list) {
 
     cmd_list->DispatchRays(&dispatch_rays);
 
-    // copy translucent buffers
+
+    // batch resource barriers
     static Array<D3D12_RESOURCE_BARRIER> pre_copy_barriers = {};
     static Array<D3D12_RESOURCE_BARRIER> post_copy_barriers = {};
     pre_copy_barriers.len = 0;
     post_copy_barriers.len = 0;
 
+    // memory barrier translucent buffers
     if (g_enable_translucent_sample_collection) {
         for (auto& instance : g_translucent_instances) {
             *array_push_uninitialized(&pre_copy_barriers)  = CD3DX12_RESOURCE_BARRIER::UAV(instance.write_sample_points_buffer);
@@ -712,20 +713,37 @@ void dispatch_rays(ID3D12GraphicsCommandList4* cmd_list) {
             *array_push_uninitialized(&post_copy_barriers) = CD3DX12_RESOURCE_BARRIER::Transition(instance.sample_points_buffer,       D3D12_RESOURCE_STATE_COPY_DEST,   D3D12_RESOURCE_STATE_NON_PIXEL_SHADER_RESOURCE);
         }
     }
+    // memory barrier render targets
     *array_push_uninitialized(&post_copy_barriers) = CD3DX12_RESOURCE_BARRIER::UAV(g_render_target);
     *array_push_uninitialized(&post_copy_barriers) = CD3DX12_RESOURCE_BARRIER::UAV(g_sample_accumulator);
 
+    // insert first set of resource barriers
     if (pre_copy_barriers.len)  cmd_list->ResourceBarrier(pre_copy_barriers.len,  pre_copy_barriers.ptr);
+
+    // perform translucent buffer copies
     if (g_enable_translucent_sample_collection) {
         for (auto& instance : g_translucent_instances) {
             cmd_list->CopyBufferRegion(instance.sample_points_buffer, 0, instance.write_sample_points_buffer, 0, instance.samples_count*sizeof(SamplePoint));
         }
     }
+
+    // insert second set of resource barriers
     if (post_copy_barriers.len) cmd_list->ResourceBarrier(post_copy_barriers.len, post_copy_barriers.ptr);
 
+    // dispatch render
+    dispatch_rays.RayGenerationShaderRecord.StartAddress = g_camera_rgen_shader_record->GetGPUVirtualAddress();
+    dispatch_rays.RayGenerationShaderRecord.SizeInBytes  = g_camera_rgen_shader_record->GetDesc().Width;
+
+    dispatch_rays.Width  = g_width;
+    dispatch_rays.Height = g_height;
+    dispatch_rays.Depth  = 1;
+
+    cmd_list->DispatchRays(&dispatch_rays);
+
+    // update globals
     g_globals.accumulator_count             += 1;
     g_globals.translucent_accumulator_count += g_enable_translucent_sample_collection;
-    g_globals.translucent_bssrdf_fudge = translucent_bssrdf_fudge;
+    g_globals.translucent_bssrdf_fudge = translucent_bssrdf_fudge; // HACK: restoring previous hack
 }
 
 } // namespace Raytracing

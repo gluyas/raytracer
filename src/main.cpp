@@ -254,7 +254,7 @@ int WINAPI wWinMain(
             parse_obj_file("data/cornell/ceiling.obj", true, &vertices, &indices, &cornell_aabb);
 
             GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
+            geometry.material.color  = { 0.9, 0.9, 0.9 };
             geometry.material.shader = Shader::Lambert;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -269,7 +269,7 @@ int WINAPI wWinMain(
 
             GeometryInstance geometry = {};
             parse_obj_file("data/cornell/redwall.obj", true, &vertices, &indices, &cornell_aabb);
-            geometry.material.color  = { 1.0, 0.0, 0.0 };
+            geometry.material.color  = { 0.9, 0.0, 0.0 };
             geometry.material.shader = Shader::Lambert;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -284,7 +284,7 @@ int WINAPI wWinMain(
 
             parse_obj_file("data/cornell/greenwall.obj", true, &vertices, &indices, &cornell_aabb);
             GeometryInstance geometry = {};
-            geometry.material.color  = { 0.0, 1.0, 0.0 };
+            geometry.material.color  = { 0.0, 0.9, 0.0 };
             geometry.material.shader = Shader::Lambert;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -314,7 +314,7 @@ int WINAPI wWinMain(
 
             parse_obj_file("data/cornell/largebox.obj", true, &vertices, &indices, &cornell_aabb);
             GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
+            geometry.material.color  = { 0.9, 0.9, 0.9 };
             geometry.material.shader = Shader::Translucent;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -329,7 +329,7 @@ int WINAPI wWinMain(
 
             parse_obj_file("data/cornell/smallbox.obj", true, &vertices, &indices, &cornell_aabb);
             GeometryInstance geometry = {};
-            geometry.material.color  = { 1.0, 1.0, 1.0 };
+            geometry.material.color  = { 0.9, 0.9, 0.9 };
             geometry.material.shader = Shader::Translucent;
             geometry.vertices = vertices;
             geometry.indices  = indices;
@@ -542,7 +542,7 @@ int WINAPI wWinMain(
             static float light_hue[3] = { 1.0, 1.0, 1.0 };
             static float light_brightness = 50.0;
             g_do_reset_translucent_accumulator |= ImGui::DragFloat("brightness##light", &light_brightness, 0.5, 0.0, 1000.0, "%.3f", ImGuiSliderFlags_Logarithmic);
-            g_do_reset_translucent_accumulator |= ImGui::ColorEdit3("rgb##light", light_hue);
+            g_do_reset_translucent_accumulator |= ImGui::ColorEdit3("hue##light", light_hue);
 
             Raytracing::g_globals.light_color = { light_hue[0] * light_brightness, light_hue[1] * light_brightness, light_hue[2] * light_brightness };
         }
@@ -575,9 +575,9 @@ int WINAPI wWinMain(
                 static float absorption = 0.1;
 
                 g_do_reset_accumulator |= ImGui::SliderFloat("scattering##translucent", &scattering, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
-                g_do_reset_accumulator |= ImGui::ColorEdit3("scattering rgb##translucent", scattering_hue, ImGuiColorEditFlags_Float);
+                g_do_reset_accumulator |= ImGui::ColorEdit3("hue##translucent_scattering", scattering_hue, ImGuiColorEditFlags_Float);
                 g_do_reset_accumulator |= ImGui::SliderFloat("absorption##translucent", &absorption, 0, 1000, "%.3f", ImGuiSliderFlags_Logarithmic);
-                g_do_reset_accumulator |= ImGui::ColorEdit3("absorption rgb##translucent", absorption_hue, ImGuiColorEditFlags_Float);
+                g_do_reset_accumulator |= ImGui::ColorEdit3("hue##translucent_absorption", absorption_hue, ImGuiColorEditFlags_Float);
 
                 Raytracing::g_globals.translucent_scattering = { scattering_hue[0] * scattering, scattering_hue[1] * scattering, scattering_hue[2] * scattering };
                 Raytracing::g_globals.translucent_absorption = { absorption_hue[0] * absorption, absorption_hue[1] * absorption, absorption_hue[2] * absorption };
@@ -603,20 +603,20 @@ int WINAPI wWinMain(
             ImGui::Separator();
             ImGui::Text("renderer");
 
-            // int set_resolution[2] = { (int) g_width, (int) g_height };
-            // if (ImGui::InputInt2("resolution", set_resolution, ImGuiInputTextFlags_EnterReturnsTrue)) {
-            //     g_do_reset_accumulator = true;
+            int set_resolution[2] = { (int) g_width, (int) g_height };
+            if (ImGui::InputInt2("resolution", set_resolution, ImGuiInputTextFlags_EnterReturnsTrue)) {
+                g_do_reset_accumulator = true;
 
-            //     set_resolution[0] = max(set_resolution[0], 256);
-            //     set_resolution[1] = max(set_resolution[1], 256);
+                set_resolution[0] = max(set_resolution[0], 256);
+                set_resolution[1] = max(set_resolution[1], 256);
 
-            //     RECT rect;
-            //     GetWindowRect(g_hwnd, &rect);
-            //     rect.right  = rect.left + set_resolution[0];
-            //     rect.bottom = rect.top  + set_resolution[1];
-            //     AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
-            //     MoveWindow(g_hwnd, rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top, true);
-            // }
+                RECT rect;
+                GetWindowRect(g_hwnd, &rect);
+                rect.right  = rect.left + set_resolution[0];
+                rect.bottom = rect.top  + set_resolution[1];
+                AdjustWindowRectEx(&rect, WINDOW_STYLE, WINDOW_MENU, WINDOW_STYLE_EX);
+                MoveWindow(g_hwnd, rect.left, rect.top, rect.right-rect.left, rect.bottom-rect.top, true);
+            }
 
             g_do_reset_accumulator |= ImGui::SliderInt("samples##render", (int*) &Raytracing::g_globals.samples_per_pixel,  1, 64, "%d", ImGuiSliderFlags_AlwaysClamp);
             g_do_reset_accumulator |= ImGui::SliderInt("bounces##render", (int*) &Raytracing::g_globals.bounces_per_sample, 0, 16, "%d", ImGuiSliderFlags_AlwaysClamp);
@@ -682,7 +682,7 @@ int WINAPI wWinMain(
             static ID3D12Resource* capture_readback_buffer = NULL;
             static UINT            capture_readback_buffer_pitch;
 
-            if (do_capture && Raytracing::g_globals.accumulator_count == capture_samples) {
+            if (do_capture && Raytracing::g_globals.accumulator_count >= capture_samples) {
                 // create readback buffer and add copy instructions to cmd_list
                 do_capture = false;
                 g_prevent_resizing += 1;
@@ -745,7 +745,7 @@ int WINAPI wWinMain(
                     Raytracing::g_globals.translucent_refractive_index,
                     Raytracing::g_globals.translucent_scattering.x, Raytracing::g_globals.translucent_scattering.y, Raytracing::g_globals.translucent_scattering.z,
                     Raytracing::g_globals.translucent_absorption.x, Raytracing::g_globals.translucent_absorption.y, Raytracing::g_globals.translucent_absorption.z,
-                    g_sample_points_radius, capture_samples, g_width, g_height
+                    g_sample_points_radius, Raytracing::g_globals.accumulator_count, g_width, g_height
                 );
                 stbi_write_png(filename, g_width, g_height, 4, data_ptr, capture_readback_buffer_pitch);
 
@@ -760,7 +760,8 @@ int WINAPI wWinMain(
             capture_updated |= ImGui::SliderInt("samples##capture", (int*) &capture_samples, Raytracing::g_globals.samples_per_pixel, 32768, "%d", ImGuiSliderFlags_AlwaysClamp);
             capture_samples = round_up(ensure_unsigned(capture_samples), Raytracing::g_globals.samples_per_pixel);
 
-            capture_updated |= ImGui::Checkbox("capture", &do_capture);
+            capture_updated |= ImGui::Checkbox("capture", &do_capture); ImGui::SameLine();
+            g_do_reset_accumulator |= ImGui::Button("reset##render");
 
             ImGui::Text("accumulated samples: %d", Raytracing::g_globals.accumulator_count);
         }
