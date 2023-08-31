@@ -90,7 +90,7 @@ RaytracingPipelineConfig pipeline_config = {
 // SHADER CODE
 
 float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
-    float4 result = 0;
+    float4 result = 1.0;
 
     RayPayload payload;
     payload.rng = rng;
@@ -107,13 +107,19 @@ float4 trace_path_sample(inout uint rng, inout RayDesc ray) {
         radiance    += payload.emission * reflectance;
         reflectance *= payload.reflectance;
 
-        if (!any(payload.reflectance)) break;
+        if (!any(payload.reflectance)) {
+            if (bounce_index == 0) {
+                result.a = 0;
+            }
+            break;
+        }
+
 
         ray.Origin   += payload.t * ray.Direction;
         ray.Direction = payload.scatter;
     }
     result.rgb = radiance;
-    result.a   = !(bounce_index == 0 && isinf(payload.t));
+    //result.a   = !(bounce_index == 0 && isinf(payload.t));
 
     rng = payload.rng; // write rng back out
     return result;
@@ -142,7 +148,8 @@ void camera_rgen() {
         ray.Direction.z   = -g.camera_focal_length;
         ray.Direction     = normalize(mul(float4(ray.Direction, 0), g.camera_to_world).xyz);
 
-        accumulated_samples += trace_path_sample(rng, ray);
+        float4 s = trace_path_sample(rng, ray);
+        if (s.a) accumulated_samples += s;
     }
     accumulated_samples /= g.samples_per_pixel;
     // add previous frames' samples

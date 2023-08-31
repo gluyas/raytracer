@@ -723,14 +723,20 @@ int WINAPI wWinMain(
                 CHECK_RESULT(capture_readback_buffer->Map(0, NULL, &data_ptr));
 
                 // write image file
+                char filename[128] = {};
                 static char timestamp[128] = {};
                 const time_t now = time(NULL);
                 if (capture_grid_index == 0) {
-                    strftime(timestamp, 128, "captures/photonix/%Y_%m_%d_%H_%M_%S", gmtime(&now));
-                    CreateDirectoryA(timestamp, NULL);
+                    if (capture_grid_count == 1) {
+                        strftime(filename, 128, "captures/skin_%Y_%m_%d_%H_%M_%S.png", gmtime(&now));
+                    } else {
+                        strftime(timestamp, 128, "captures/photonix/%Y_%m_%d_%H_%M_%S", gmtime(&now));
+                        CreateDirectoryA(timestamp, NULL);
+                    }
                 }
-                char filename[128] = {};
-                sprintf(filename, "%s/%ix%i.png", timestamp, capture_grid_index/capture_grid_count, capture_grid_index%capture_grid_count);
+                if (capture_grid_count > 1) {
+                    sprintf(filename, "%s/%ix%i.png", timestamp, capture_grid_index/capture_grid_count, capture_grid_index%capture_grid_count);
+                }
                 stbi_write_png(filename, g_width, g_height, 4, data_ptr, capture_readback_buffer_pitch);
 
                 capture_readback_buffer->Unmap(0, &CD3DX12_RANGE(0, 0));
@@ -739,8 +745,7 @@ int WINAPI wWinMain(
 
                 //g_prevent_resizing -= 1;
                 capture_grid_index += 1;
-                if (capture_grid_index < capture_grid_count*capture_grid_count) {
-
+                if (capture_grid_count > 1 && capture_grid_index < capture_grid_count*capture_grid_count) {
                     float blood_t      = (float) (capture_grid_index / capture_grid_count) / (float) (capture_grid_count-1);
                     float absorption_t = (float) (capture_grid_index % capture_grid_count) / (float) (capture_grid_count-1);
                     Raytracing::g_globals.translucent_blood = lerp(capture_blood_range[0], capture_blood_range[1], blood_t*blood_t);
@@ -762,9 +767,10 @@ int WINAPI wWinMain(
 
             if (capture_updated && do_capture) {
                 capture_grid_index = 0;
-                Raytracing::g_globals.translucent_blood      = capture_blood_range[0];
-                Raytracing::g_globals.translucent_absorption = capture_absorption_range[0];
-
+                if (capture_grid_count > 1) {
+                    Raytracing::g_globals.translucent_blood      = capture_blood_range[0];
+                    Raytracing::g_globals.translucent_absorption = capture_absorption_range[0];
+                }
                 g_do_reset_accumulator = true;
                 Raytracing::g_enable_translucent_sample_collection = false;
             }
